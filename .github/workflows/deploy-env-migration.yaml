@@ -1,8 +1,8 @@
 name: Deploy Environment & Migrate Data (Data Sync)
 
 # =============================================================================
-# IaC ↔ 数据流单向迁移流水线
-# 1. 动态 Provision (基于 Terraform 创建新环境)
+# IaC ↔ 数据流单向迁移流水线 (Site Recovery)
+# 1. 动态 Provision (基于 Terraform 创建新环境 site-recovery)
 # 2. 部署基础服务 (Bootstrap 部署，跑空环境)
 # 3. 生产环境克隆与单向同步 (通过 site_migration Ansible 角色)
 # =============================================================================
@@ -35,6 +35,12 @@ on:
         required: false
         default: true
         type: boolean
+      terraform_action:
+        description: "apply 创建/更新，destroy 销毁"
+        required: false
+        default: "apply"
+        type: choice
+        options: [apply, destroy]
 
 permissions:
   contents: read
@@ -48,25 +54,24 @@ env:
   VAULT_ADDR: https://vault.svc.plus
   VAULT_ROLE: github-actions-xworkspace-console
   VAULT_KV: kv/data/CICD
+  VAULT_KV_OPENCLAW: kv/data/openclaw
+  VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
+  # 指向 site-recovery 的 Terraform 目录
+  ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/site-recovery
   PLAYBOOKS_DIR: infra/playbooks
 
 jobs:
   # ---------------------------------------------------------------------------
   # 步骤 1: 基础设施配置与启动 (Provision)
-  # [可直接参考 deploy-ai-workspace-iac.yaml 中的 provision]
   # ---------------------------------------------------------------------------
   provision:
     name: Provision New Environment (Terraform)
     if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
     runs-on: ubuntu-latest
+    outputs:
+      hosts: ${{ steps.matrix.outputs.hosts }}
+      count: ${{ steps.matrix.outputs.count }}
     steps:
-      - name: Checkout infra
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-infra/iac_modules
-          ref: ${{ github.event.inputs.infra_ref }}
-          path: infra/iac_modules
-          
       - name: Load Vault secrets
         id: vault
         uses: hashicorp/vault-action@v4
@@ -74,24 +79,157 @@ jobs:
           url: ${{ env.VAULT_ADDR }}
           method: jwt
           role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          ignoreNotFound: true
           secrets: |
             ${{ env.VAULT_KV }} VULTR_API_KEY | VULTR_API_KEY ;
-      
-      # 省略实际 Terraform Apply 步骤 (参考原有 IAC 流水线)...
-      - name: Placeholder for Terraform Apply
-        run: echo "Terraform applies new infrastructure and outputs target IPs..."
+            ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
+            ${{ env.VAULT_KV }} TF_STATE_BUCKET | TF_STATE_BUCKET ;
+            ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
+            ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
+            ${{ env.VAULT_KV }} TF_STATE_REGION | TF_STATE_REGION
+
+      - name: Checkout iac_modules
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-infra/iac_modules
+          ref: ${{ github.event.inputs.infra_ref }}
+          path: infra/iac_modules
+          
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install render deps
+        run: pip install --quiet pyyaml jinja2
+
+      - name: Configure remote backend
+        working-directory: ${{ env.ENV_DIR }}
+        env:
+          TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
+          TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+        run: python3 $GITHUB_WORKSPACE/${{ env.VPS_ROOT }}/scripts/render_backend_tf.py backend.tf
+
+      - name: generate.py render
+        working-directory: ${{ env.VPS_ROOT }}
+        # 强制指定 envs/site-recovery 生成 tfvars 和显式 HCL
+        run: python3 scripts/generate.py render --env site-recovery || python3 scripts/generate.py render
+
+      - name: Terraform init
+        working-directory: ${{ env.ENV_DIR }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+          TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
+          TF_STATE_BUCKET: ${{ steps.vault.outputs.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=site-recovery/terraform.tfstate" \
+            -backend-config="region=${TF_STATE_REGION}"
+
+      - name: Terraform Apply / Destroy
+        working-directory: ${{ env.ENV_DIR }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+          TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
+        run: terraform ${{ github.event.inputs.terraform_action }} -auto-approve -input=false
+
+      - name: generate.py inventory
+        if: ${{ github.event.inputs.terraform_action == 'apply' }}
+        working-directory: ${{ env.VPS_ROOT }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+        # 同样指定 envs/site-recovery
+        run: python3 scripts/generate.py inventory --env site-recovery || python3 scripts/generate.py inventory
+
+      - name: Build deploy matrix
+        id: matrix
+        if: ${{ github.event.inputs.terraform_action == 'apply' }}
+        working-directory: ${{ env.ENV_DIR }}
+        run: |
+          hosts="$(jq -c 'keys' cmdb.json)"
+          echo "hosts=${hosts}" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq 'length' cmdb.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload CMDB artifact
+        if: ${{ github.event.inputs.terraform_action == 'apply' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: site-recovery-cmdb
+          path: |
+            ${{ env.ENV_DIR }}/cmdb.json
+            ${{ env.ENV_DIR }}/inventory.ini
 
   # ---------------------------------------------------------------------------
   # 步骤 2: 基础环境安装 (Bootstrap Deploy)
   # ---------------------------------------------------------------------------
   deploy_base:
-    name: Deploy Base Services
+    name: Deploy Base Services on ${{ matrix.host }}
     needs: provision
-    if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
+    if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
-      - name: Placeholder for Ansible Base Deploy
-        run: echo "Run on-host-bootstrap.sh on new nodes..."
+      - name: Checkout xworkspace-console helpers
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-infra/iac_modules
+          ref: ${{ github.event.inputs.infra_ref }}
+
+      - name: Download CMDB
+        uses: actions/download-artifact@v8
+        with:
+          name: site-recovery-cmdb
+          path: cmdb
+
+      - name: Load Vault secrets
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+            ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
+
+      - name: Wait for host SSH
+        run: |
+          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
+          for _ in $(seq 1 60); do
+            if nc -z -w 5 "$ip" 22; then exit 0; fi
+            sleep 10
+          done
+          exit 1
+
+      - name: Run on-host bootstrap
+        env:
+          MATRIX_HOST: ${{ matrix.host }}
+          CMDB_PATH: cmdb/cmdb.json
+          SSH_KEY_PATH: ~/.ssh/id_deploy
+          AI_WORKSPACE_OFFLINE_MODE: 'off'
+          AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
+        run: bash terraform-hcl-standard/vultr-vps/scripts/run-on-host-bootstrap.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
@@ -99,10 +237,17 @@ jobs:
   data_migration:
     name: Migrate Site Data (Source -> Target)
     needs: deploy_base
-    # 即使不执行 Provision，也可以单独触发纯数据同步
-    if: ${{ always() }}
+    if: ${{ always() && github.event.inputs.terraform_action == 'apply' }}
     runs-on: ubuntu-latest
     steps:
+      - name: Download CMDB
+        # 只在 provision 运行的情况下下载
+        if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: site-recovery-cmdb
+          path: cmdb
+          
       - name: Checkout playbooks
         uses: actions/checkout@v7
         with:
@@ -131,8 +276,13 @@ jobs:
 
       - name: Generate Migration Inventory
         run: |
-          # 模拟从 IAC 或人工输入中获取 target_ip (这里假定 target_ip 是通过环境变量或输入传入)
-          TARGET_IP="new_env_ip_placeholder" 
+          # 动态解析 target IP，如果是纯数据迁移，则可能需要手动指定，这里以 jq 解析 cmdb 为主
+          if [ -f "cmdb/cmdb.json" ]; then
+            TARGET_IP=$(jq -r 'to_entries | .[0].value.ip' cmdb/cmdb.json)
+          else
+            TARGET_IP="new_env_ip_placeholder" # 需要补充处理纯迁移模式下的 Target IP
+          fi
+          
           echo "[migration_source]" > inventory_migration.ini
           echo "${{ github.event.inputs.source_host }} ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_deploy" >> inventory_migration.ini
           echo "" >> inventory_migration.ini
