@@ -184,8 +184,8 @@ jobs:
       - name: Checkout xworkspace-console helpers
         uses: actions/checkout@v7
         with:
-          repository: ai-workspace-infra/iac_modules
-          ref: ${{ github.event.inputs.infra_ref }}
+          repository: ai-workspace-lab/xworkspace-console
+          ref: main
 
       - name: Download CMDB
         uses: actions/download-artifact@v8
@@ -229,7 +229,7 @@ jobs:
           SSH_KEY_PATH: ~/.ssh/id_deploy
           AI_WORKSPACE_OFFLINE_MODE: 'off'
           AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
-        run: bash terraform-hcl-standard/vultr-vps/scripts/run-on-host-bootstrap.sh
+        run: bash scripts/run-on-host-bootstrap.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
