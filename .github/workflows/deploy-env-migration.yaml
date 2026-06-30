@@ -117,7 +117,7 @@ jobs:
       - name: generate.py render
         working-directory: ${{ env.VPS_ROOT }}
         # 强制指定 envs/site-recovery 生成 tfvars 和显式 HCL
-        run: python3 scripts/generate.py render --env site-recovery || python3 scripts/generate.py render
+        run: python3 scripts/generate.py render --resources config/resources/site-recovery.yaml --workdir envs/site-recovery
 
       - name: Terraform init
         working-directory: ${{ env.ENV_DIR }}
@@ -148,7 +148,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
         # 同样指定 envs/site-recovery
-        run: python3 scripts/generate.py inventory --env site-recovery || python3 scripts/generate.py inventory
+        run: python3 scripts/generate.py inventory --resources config/resources/site-recovery.yaml --workdir envs/site-recovery
 
       - name: Build deploy matrix
         id: matrix
