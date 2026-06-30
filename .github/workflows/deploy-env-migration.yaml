@@ -299,3 +299,45 @@ jobs:
             migrate_site.yml \
             -e "target_domain=${{ github.event.inputs.target_domain_base }}" \
             -e "migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
+
+  switch_dns:
+    name: Switch DNS Traffic (Manual Approval)
+    needs: migrate_data
+    if: ${{ always() && github.event.inputs.terraform_action == 'apply' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Download CMDB
+        uses: actions/download-artifact@v8
+        with:
+          name: site-recovery-cmdb
+          path: cmdb
+          
+      - name: Checkout playbooks
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-infra/playbooks
+          ref: ${{ github.event.inputs.infra_ref }}
+          path: infra/playbooks
+
+      - name: Install Ansible
+        run: pip install --quiet ansible
+
+      - name: Load Vault secrets for DNS
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            ${{ env.VAULT_KV }} CLOUDFLARE_API_TOKEN | CLOUDFLARE_API_TOKEN
+
+      - name: Switch Cloudflare DNS Records
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd infra/playbooks
+          ansible-playbook -i ../../cmdb/inventory update_cloudflare_svc_plus_dns.yml
