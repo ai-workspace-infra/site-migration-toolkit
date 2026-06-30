@@ -41,6 +41,11 @@ on:
         default: "apply"
         type: choice
         options: [apply, destroy]
+      confirm_dns_switch:
+        description: "危险: 勾选此项将在最后一步接管原域名的生产流量 (仅真实灾备启用)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -303,7 +308,7 @@ jobs:
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
     needs: migrate_data
-    if: ${{ always() && github.event.inputs.terraform_action == 'apply' }}
+    if: ${{ always() && github.event.inputs.terraform_action == 'apply' && github.event.inputs.confirm_dns_switch == 'true' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
