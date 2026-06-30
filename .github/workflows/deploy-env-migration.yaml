@@ -265,6 +265,8 @@ jobs:
           url: ${{ env.VAULT_ADDR }}
           method: jwt
           role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          ignoreNotFound: true
           secrets: |
             ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64
 
