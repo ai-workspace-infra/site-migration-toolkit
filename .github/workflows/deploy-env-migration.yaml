@@ -18,7 +18,7 @@ on:
       source_host:
         description: "源环境 IP 或域名 (用于导出数据)"
         required: true
-        default: "install.svc.plus"
+        default: "console.svc.plus"
         type: string
       source_domain_base:
         description: "源环境域名后缀 (例如 svc.plus)"
@@ -35,6 +35,12 @@ on:
         required: false
         default: true
         type: boolean
+      toolkit_action:
+        description: "Toolkit 执行动作"
+        required: false
+        default: "migrate"
+        type: choice
+        options: [migrate, backup, restore]
       terraform_action:
         description: "apply 创建/更新，destroy 销毁"
         required: false
@@ -296,14 +302,10 @@ jobs:
           echo "[migration_target]" >> inventory_migration.ini
           echo "${TARGET_IP} ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_deploy" >> inventory_migration.ini
 
-      - name: Run Ansible Site Migration Playbook
-        working-directory: ${{ env.PLAYBOOKS_DIR }}
+      - name: Run Toolkit Action (${{ github.event.inputs.toolkit_action }})
+        working-directory: .
         run: |
-          ansible-playbook \
-            -i ../inventory_migration.ini \
-            migrate_site.yml \
-            -e "target_domain=${{ github.event.inputs.target_domain_base }}" \
-            -e "migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
+          make ${{ github.event.inputs.toolkit_action }} RUN_ARGS="-e target_domain=${{ github.event.inputs.target_domain_base }} -e migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
@@ -345,4 +347,4 @@ jobs:
           CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
         run: |
           cd infra/playbooks
-          ansible-playbook -i ../../cmdb/inventory update_cloudflare_svc_plus_dns.yml
+          ansible-playbook -i ../../cmdb/inventory update_site_dns.yml -e "target_domain=${{ github.event.inputs.target_domain_base }}" -e "source_domain=${{ github.event.inputs.source_domain_base }}"
