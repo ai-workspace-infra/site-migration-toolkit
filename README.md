@@ -56,6 +56,24 @@ If you are running the GitHub Actions workflow (`deploy-env-migration.yaml`), pl
 - **Vault Role**: The required role name is `github-actions-site-migration-toolkit`.
 - **Role Binding**: Ensure the JWT `bound_claims` match the new repository name (`repo:ai-workspace-infra/site-migration-toolkit:ref:refs/heads/main` or similar).
 
+**Vault Role Provisioning Script**:
+To avoid CLI parsing issues, use the following JSON payload format to create or update the role:
+```bash
+vault write auth/jwt/role/github-actions-site-migration-toolkit - <<EOF
+{
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
+  },
+  "user_claim": "actor",
+  "role_type": "jwt",
+  "policies": ["CICD", "openclaw"], 
+  "ttl": "1h"
+}
+EOF
+```
+
 ---
 
 # 站点迁移与备份工具集 (Site Migration & Backup Toolkit)
@@ -113,3 +131,21 @@ If you are running the GitHub Actions workflow (`deploy-env-migration.yaml`), pl
 如果您正在运行 GitHub Actions 流水线 (`deploy-env-migration.yaml`)，请确保您的 Vault 环境已正确配置：
 - **Vault 角色 (Role)**: 所需的角色名为 `github-actions-site-migration-toolkit`。
 - **角色绑定 (Role Binding)**: 请确保 JWT 的 `bound_claims` 匹配新的代码库名称（例如 `repo:ai-workspace-infra/site-migration-toolkit:ref:refs/heads/main`）。
+
+**Vault 角色配置脚本**:
+为了避免 Vault CLI 在解析命令行 Map 类型时出现报错，推荐使用以下 JSON payload 的格式直接创建或更新角色：
+```bash
+vault write auth/jwt/role/github-actions-site-migration-toolkit - <<EOF
+{
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
+  },
+  "user_claim": "actor",
+  "role_type": "jwt",
+  "policies": ["CICD", "openclaw"], 
+  "ttl": "1h"
+}
+EOF
+```
