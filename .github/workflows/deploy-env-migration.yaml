@@ -308,7 +308,7 @@ jobs:
           MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
           MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
         run: |
-          make ${{ github.event.inputs.toolkit_action }} RUN_ARGS="-e source_host=${{ github.event.inputs.source_host }} -e target_domain=${{ github.event.inputs.target_domain_base }} -e migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
+          make ${{ github.event.inputs.toolkit_action }} RUN_ARGS="-e source_host=${{ github.event.inputs.source_host }} -e target_host=www.${{ github.event.inputs.target_domain_base }} -e target_domain=${{ github.event.inputs.target_domain_base }} -e migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
