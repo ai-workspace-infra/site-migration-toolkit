@@ -6,7 +6,7 @@ This document is based on the actual deployment of the `install.svc.plus` produc
 
 | Instance Purpose | Runtime Mode | Listen Port/Address | Contained Business Databases |
 | :--- | :--- | :--- | :--- |
-| **Global AI/IAM/Code DB** | Docker (`postgresql-svc-plus`) | `127.0.0.1:5432` | Account, Vault Storage, Artifact, LiteLLM, OpenClaw, QMD, RAG, Notification, Scheduler, Audit, Zitadel IAM, Gitea Code |
+| **Global AI/IAM/Code DB** | Docker (`postgresql-svc-plus`) | `127.0.0.1:5432` | Account, LiteLLM, Knowledge DB (RAG), Zitadel IAM, Gitea Code |
 
 ## 2. Unified Backup Strategy
 
@@ -27,7 +27,7 @@ mkdir -p $BACKUP_DIR
 
 echo "[INFO] Backing up all business databases (Port 15432)..."
 DB_URL_BASE="postgres://svcplus_vps:<YOUR_PASSWORD>@127.0.0.1:15432"
-for DB in account litellm openclaw qmd rag notification scheduler audit artifact vault_storage; do
+for DB in account litellm knowledge_db; do
     pg_dump "$DB_URL_BASE/$DB?sslmode=disable" | gzip > "$BACKUP_DIR/${DB}_$DATE.sql.gz"
 done
 
@@ -61,7 +61,7 @@ When data corruption or a full machine migration occurs, please follow the resto
 > Before executing the restoration, you must stop business services that generate write traffic (such as Gitea, LiteLLM, etc.), keeping only the PostgreSQL process running.
 
 ### 3.1 Restore Global Business Databases
-Includes: `Account`, `Vault Storage`, `Artifact`, `LiteLLM`, `OpenClaw`, `QMD`, `RAG`, `Notification`, `Scheduler`, `Audit`
+Includes: `Account`, `LiteLLM`, `Knowledge DB (RAG)`
 ```bash
 # Decompress the backup file and import directly using credentials (using account as an example)
 gunzip -c /var/backups/postgresql/account_YYYYMMDD.sql.gz | psql "postgres://svcplus_vps:<YOUR_PASSWORD>@127.0.0.1:15432/account?sslmode=disable"

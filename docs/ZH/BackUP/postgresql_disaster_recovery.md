@@ -6,7 +6,7 @@
 
 | 实例用途 | 运行模式 | 监听端口/地址 | 包含的业务系统库 |
 | :--- | :--- | :--- | :--- |
-| **核心 AI/IAM/代码 全局库** | Docker (`postgresql-svc-plus`) | `127.0.0.1:5432` | Account, Vault Storage, Artifact, LiteLLM, OpenClaw, QMD, RAG, Notification, Scheduler, Audit, Zitadel IAM, Gitea Code |
+| **核心 AI/IAM/代码 全局库** | Docker (`postgresql-svc-plus`) | `127.0.0.1:5432` | Account, LiteLLM, Knowledge DB (RAG), Zitadel IAM, Gitea Code |
 
 ## 2. 统一备份策略 (Backup)
 
@@ -27,7 +27,7 @@ mkdir -p $BACKUP_DIR
 
 echo "[INFO] 开始备份所有业务库 (15432 端口)..."
 DB_URL_BASE="postgres://svcplus_vps:<YOUR_PASSWORD>@127.0.0.1:15432"
-for DB in account litellm openclaw qmd rag notification scheduler audit artifact vault_storage; do
+for DB in account litellm knowledge_db; do
     pg_dump "$DB_URL_BASE/$DB?sslmode=disable" | gzip > "$BACKUP_DIR/${DB}_$DATE.sql.gz"
 done
 
@@ -61,7 +61,7 @@ echo "[INFO] 备份完成！"
 > 在执行还原前，必须先停止产生写入流量的业务服务（如 Gitea, LiteLLM 等），仅保留 PostgreSQL 进程运行。
 
 ### 3.1 还原全局业务库
-包含：`Account`, `Vault Storage`, `Artifact`, `LiteLLM`, `OpenClaw`, `QMD`, `RAG`, `Notification`, `Scheduler`, `Audit`
+包含：`Account`, `LiteLLM`, `Knowledge DB (RAG)`
 ```bash
 # 解压备份文件并使用凭证直接导入 (以 account 为例)
 gunzip -c /var/backups/postgresql/account_YYYYMMDD.sql.gz | psql "postgres://svcplus_vps:<YOUR_PASSWORD>@127.0.0.1:15432/account?sslmode=disable"
