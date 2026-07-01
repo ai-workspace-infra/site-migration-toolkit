@@ -63,7 +63,7 @@ concurrency:
 
 env:
   VAULT_ADDR: https://vault.svc.plus
-  VAULT_ROLE: github-actions-site-migration-toolkit
+  VAULT_ROLE: github-actions-site-recovery
   VAULT_KV: kv/data/CICD
   VAULT_KV_OPENCLAW: kv/data/openclaw
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
