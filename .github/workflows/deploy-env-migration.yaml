@@ -285,6 +285,11 @@ jobs:
           ignoreNotFound: true
           secrets: |
             ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64
+            ${{ env.VAULT_KV }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET
+            ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY
+            ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY
+            ${{ env.VAULT_KV }} TF_STATE_REGION | MIGRATION_S3_REGION
+            ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT
 
       - name: Configure SSH Key
         run: |
@@ -297,6 +302,11 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+          MIGRATION_S3_BUCKET: ${{ steps.vault.outputs.MIGRATION_S3_BUCKET }}
+          MIGRATION_S3_ACCESS_KEY: ${{ steps.vault.outputs.MIGRATION_S3_ACCESS_KEY }}
+          MIGRATION_S3_SECRET_KEY: ${{ steps.vault.outputs.MIGRATION_S3_SECRET_KEY }}
+          MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
+          MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
         run: |
           make ${{ github.event.inputs.toolkit_action }} RUN_ARGS="-e source_host=${{ github.event.inputs.source_host }} -e target_domain=${{ github.event.inputs.target_domain_base }} -e migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
 
