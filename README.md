@@ -1,4 +1,4 @@
-# Site Migration & Backup Toolkit (site-recovery)
+# Site Migration & Backup Toolkit (site-migration-toolkit)
 
 *🇨🇳 中文版在下方 | Chinese version below*
 

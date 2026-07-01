@@ -30,21 +30,21 @@
 
 ### 4. 运行前置条件 (Vault OIDC 授权)
 
-由于我们新建了独立的 `site-recovery` 仓库，该仓库需要通过 GitHub Actions 的 OIDC 身份认证到 Vault 获取凭证。在首次运行流水线之前，你必须使用拥有管理员权限的凭据在你的终端（或 Vault 所在的 `vault.svc.plus` 主机）执行以下操作，以授权新的流水线拉取密钥：
+由于我们新建了独立的 `site-migration-toolkit` 仓库，该仓库需要通过 GitHub Actions 的 OIDC 身份认证到 Vault 获取凭证。在首次运行流水线之前，你必须使用拥有管理员权限的凭据在你的终端（或 Vault 所在的 `vault.svc.plus` 主机）执行以下操作，以授权新的流水线拉取密钥：
 
 ```bash
 export VAULT_ADDR=https://vault.svc.plus
 export VAULT_TOKEN="hvs.xxxxxxxxx" # 请替换为你拥有管理员权限的真实 Token
 
-vault write auth/jwt/role/github-actions-site-recovery - <<EOF
+vault write auth/jwt/role/github-actions-site-migration-toolkit - <<EOF
 {
   "role_type": "jwt",
   "user_claim": "repository",
   "bound_audiences": ["vault"],
   "bound_claims_type": "glob",
   "bound_claims": {
-    "repository": "ai-workspace-infra/site-recovery",
-    "sub": "repo:ai-workspace-infra/site-recovery:*"
+    "repository": "ai-workspace-infra/site-migration-toolkit",
+    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
   },
   "token_policies": ["github-actions-xworkspace-console"],
   "token_ttl": "20m",

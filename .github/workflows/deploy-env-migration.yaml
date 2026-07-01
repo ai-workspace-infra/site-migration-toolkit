@@ -2,7 +2,7 @@ name: Deploy Environment & Migrate Data (Data Sync)
 
 # =============================================================================
 # IaC ↔ 数据流单向迁移流水线 (Site Recovery)
-# 1. 动态 Provision (基于 Terraform 创建新环境 site-recovery)
+# 1. 动态 Provision (基于 Terraform 创建新环境 site-migration-toolkit)
 # 2. 部署基础服务 (Bootstrap 部署，跑空环境)
 # 3. 生产环境克隆与单向同步 (通过 site_migration Ansible 角色)
 # =============================================================================
@@ -63,12 +63,12 @@ concurrency:
 
 env:
   VAULT_ADDR: https://vault.svc.plus
-  VAULT_ROLE: github-actions-site-recovery
+  VAULT_ROLE: github-actions-site-migration-toolkit
   VAULT_KV: kv/data/CICD
   VAULT_KV_OPENCLAW: kv/data/openclaw
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
-  # 指向 site-recovery 的 Terraform 目录
-  ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/site-recovery
+  # 指向 site-migration-toolkit 的 Terraform 目录
+  ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/site-migration-toolkit
   PLAYBOOKS_DIR: infra/playbooks
 
 jobs:
@@ -127,8 +127,8 @@ jobs:
 
       - name: generate.py render
         working-directory: ${{ env.VPS_ROOT }}
-        # 强制指定 envs/site-recovery 生成 tfvars 和显式 HCL
-        run: python3 scripts/generate.py render --resources config/resources/site-recovery.yaml --workdir envs/site-recovery
+        # 强制指定 envs/site-migration-toolkit 生成 tfvars 和显式 HCL
+        run: python3 scripts/generate.py render --resources config/resources/site-migration-toolkit.yaml --workdir envs/site-migration-toolkit
 
       - name: Terraform init
         working-directory: ${{ env.ENV_DIR }}
@@ -141,7 +141,7 @@ jobs:
         run: |
           terraform init -input=false \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=site-recovery/terraform.tfstate" \
+            -backend-config="key=site-migration-toolkit/terraform.tfstate" \
             -backend-config="region=${TF_STATE_REGION}"
 
       - name: Terraform Apply / Destroy
@@ -158,8 +158,8 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-        # 同样指定 envs/site-recovery
-        run: python3 scripts/generate.py inventory --resources config/resources/site-recovery.yaml --workdir envs/site-recovery
+        # 同样指定 envs/site-migration-toolkit
+        run: python3 scripts/generate.py inventory --resources config/resources/site-migration-toolkit.yaml --workdir envs/site-migration-toolkit
 
       - name: Build deploy matrix
         id: matrix
@@ -174,7 +174,7 @@ jobs:
         if: ${{ github.event.inputs.terraform_action == 'apply' }}
         uses: actions/upload-artifact@v7
         with:
-          name: site-recovery-cmdb
+          name: site-migration-toolkit-cmdb
           path: |
             ${{ env.ENV_DIR }}/cmdb.json
             ${{ env.ENV_DIR }}/inventory.ini
@@ -201,7 +201,7 @@ jobs:
       - name: Download CMDB
         uses: actions/download-artifact@v8
         with:
-          name: site-recovery-cmdb
+          name: site-migration-toolkit-cmdb
           path: cmdb
 
       - name: Load Vault secrets
@@ -256,7 +256,7 @@ jobs:
         if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
         uses: actions/download-artifact@v8
         with:
-          name: site-recovery-cmdb
+          name: site-migration-toolkit-cmdb
           path: cmdb
           
       - name: Checkout playbooks
@@ -317,7 +317,7 @@ jobs:
       - name: Download CMDB
         uses: actions/download-artifact@v8
         with:
-          name: site-recovery-cmdb
+          name: site-migration-toolkit-cmdb
           path: cmdb
           
       - name: Checkout playbooks

@@ -8,10 +8,10 @@ help:
 	@echo "  make restore   - Execute offline restore on the target host"
 
 migrate:
-	@bash scripts/run_toolkit.sh migrate $(RUN_ARGS)
+	@python3 scripts/run_toolkit.py migrate $(RUN_ARGS)
 
 backup:
-	@bash scripts/run_toolkit.sh backup $(RUN_ARGS)
+	@python3 scripts/run_toolkit.py backup $(RUN_ARGS)
 
 restore:
-	@bash scripts/run_toolkit.sh restore $(RUN_ARGS)
+	@python3 scripts/run_toolkit.py restore $(RUN_ARGS)
