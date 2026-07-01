@@ -4,13 +4,9 @@
 
 ## 1. 线上环境数据库架构清单
 
-根据线上环境探勘，当前系统存在 **三个独立运行的 PostgreSQL 实例**。在进行统一备份时，必须分别对这三个实例进行数据导出。
-
 | 实例用途 | 运行模式 | 监听端口/地址 | 包含的业务系统库 |
 | :--- | :--- | :--- | :--- |
-| **AI 核心服务库** | Docker (`postgresql-svc-plus`) | `127.0.0.1:5432` | Account, Vault Storage, Artifact, LiteLLM, OpenClaw, QMD, RAG, Notification, Scheduler, Audit |
-| **Zitadel 认证库** | Docker (`zitadel-db-1`) | 容器内部网 | Zitadel IAM 数据 |
-| **Gitea 代码库** | Native Systemd (PG 16) | `127.0.0.1:5434` | Gitea |
+| **核心 AI/IAM/代码 全局库** | Docker (`postgresql-svc-plus`) | `127.0.0.1:5432` | Account, Vault Storage, Artifact, LiteLLM, OpenClaw, QMD, RAG, Notification, Scheduler, Audit, Zitadel IAM, Gitea Code |
 
 ## 2. 统一备份策略 (Backup)
 
@@ -29,17 +25,17 @@ BACKUP_DIR="/var/backups/postgresql"
 DATE=$(date +"%Y%m%d_%H%M%S")
 mkdir -p $BACKUP_DIR
 
-echo "[INFO] 开始备份 AI 核心服务各业务库 (15432 端口)..."
+echo "[INFO] 开始备份所有业务库 (15432 端口)..."
 DB_URL_BASE="postgres://svcplus_vps:<YOUR_PASSWORD>@127.0.0.1:15432"
 for DB in account litellm openclaw qmd rag notification scheduler audit artifact vault_storage; do
     pg_dump "$DB_URL_BASE/$DB?sslmode=disable" | gzip > "$BACKUP_DIR/${DB}_$DATE.sql.gz"
 done
 
-echo "[INFO] 开始备份 Zitadel 认证库 (zitadel-db-1)..."
-docker exec zitadel-db-1 pg_dumpall -U postgres | gzip > "$BACKUP_DIR/zitadel_$DATE.sql.gz"
+echo "[INFO] 开始备份 Zitadel 认证库..."
+docker exec postgresql-svc-plus pg_dump -U postgres zitadel | gzip > "$BACKUP_DIR/zitadel_$DATE.sql.gz"
 
-echo "[INFO] 开始备份 Gitea 代码库 (Native PG 16)..."
-sudo -u postgres pg_dumpall -p 5434 | gzip > "$BACKUP_DIR/gitea_$DATE.sql.gz"
+echo "[INFO] 开始备份 Gitea 代码库..."
+docker exec postgresql-svc-plus pg_dump -U postgres gitea | gzip > "$BACKUP_DIR/gitea_$DATE.sql.gz"
 
 echo "[INFO] 清理 7 天前的旧备份..."
 find $BACKUP_DIR -type f -name "*.sql.gz" -mtime +7 -delete
@@ -64,24 +60,23 @@ echo "[INFO] 备份完成！"
 > [!WARNING]
 > 在执行还原前，必须先停止产生写入流量的业务服务（如 Gitea, LiteLLM 等），仅保留 PostgreSQL 进程运行。
 
-### 3.1 还原 AI 核心服务库 (15432 端口)
+### 3.1 还原全局业务库
 包含：`Account`, `Vault Storage`, `Artifact`, `LiteLLM`, `OpenClaw`, `QMD`, `RAG`, `Notification`, `Scheduler`, `Audit`
 ```bash
 # 解压备份文件并使用凭证直接导入 (以 account 为例)
 gunzip -c /var/backups/postgresql/account_YYYYMMDD.sql.gz | psql "postgres://svcplus_vps:<YOUR_PASSWORD>@127.0.0.1:15432/account?sslmode=disable"
 ```
 
-### 3.2 还原 Zitadel 认证库 (Docker)
+### 3.2 还原 Zitadel 认证库
 ```bash
 # 解压备份文件并导入
-gunzip -c /var/backups/postgresql/zitadel_YYYYMMDD.sql.gz | docker exec -i zitadel-db-1 psql -U postgres
+gunzip -c /var/backups/postgresql/zitadel_YYYYMMDD.sql.gz | docker exec -i postgresql-svc-plus psql -U postgres -d zitadel
 ```
 
-### 3.3 还原 Gitea 代码库 (Native)
-由于 Gitea 在宿主机物理机上，我们需要切换到 postgres 用户执行：
+### 3.3 还原 Gitea 代码库
 ```bash
-# 解压备份文件并导入 (注意端口 5434)
-gunzip -c /var/backups/postgresql/gitea_YYYYMMDD.sql.gz | sudo -u postgres psql -p 5434
+# 解压备份文件并导入
+gunzip -c /var/backups/postgresql/gitea_YYYYMMDD.sql.gz | docker exec -i postgresql-svc-plus psql -U postgres -d gitea
 ```
 
 ## 4. 高可用与进阶建议 (Disaster Recovery)
