@@ -54,7 +54,9 @@ def main():
     print("=" * 60)
     
     cmd = ["ansible-playbook"]
-    if inventory_path:
+    if "-i" in unknown_args:
+        print("[INFO] Explicit -i flag detected. Skipping auto-inventory resolution.")
+    elif inventory_path:
         cmd.extend(["-i", str(inventory_path)])
     else:
         print("[WARNING] No valid cmdb/inventory file found. Proceeding without explicit -i flag.")

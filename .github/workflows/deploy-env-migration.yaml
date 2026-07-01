@@ -259,12 +259,17 @@ jobs:
           name: site-migration-toolkit-cmdb
           path: cmdb
           
+      - name: Checkout site-migration-toolkit
+        uses: actions/checkout@v7
+        with:
+          path: site-migration-toolkit
+
       - name: Checkout playbooks
         uses: actions/checkout@v7
         with:
           repository: ai-workspace-infra/playbooks
           ref: ${{ github.event.inputs.infra_ref }}
-          path: infra/playbooks
+          path: playbooks
 
       - name: Install Ansible
         run: pip install --quiet ansible
@@ -303,9 +308,9 @@ jobs:
           echo "${TARGET_IP} ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_deploy" >> inventory_migration.ini
 
       - name: Run Toolkit Action (${{ github.event.inputs.toolkit_action }})
-        working-directory: .
+        working-directory: site-migration-toolkit
         run: |
-          make ${{ github.event.inputs.toolkit_action }} RUN_ARGS="-e target_domain=${{ github.event.inputs.target_domain_base }} -e migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
+          make ${{ github.event.inputs.toolkit_action }} RUN_ARGS="-i $GITHUB_WORKSPACE/inventory_migration.ini -e target_domain=${{ github.event.inputs.target_domain_base }} -e migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
@@ -325,7 +330,7 @@ jobs:
         with:
           repository: ai-workspace-infra/playbooks
           ref: ${{ github.event.inputs.infra_ref }}
-          path: infra/playbooks
+          path: playbooks
 
       - name: Install Ansible
         run: pip install --quiet ansible
@@ -346,5 +351,5 @@ jobs:
         env:
           CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
         run: |
-          cd infra/playbooks
-          ansible-playbook -i ../../cmdb/inventory update_site_dns.yml -e "target_domain=${{ github.event.inputs.target_domain_base }}" -e "source_domain=${{ github.event.inputs.source_domain_base }}"
+          cd playbooks
+          ansible-playbook -i ../cmdb/inventory.ini update_site_dns.yml -e "target_domain=${{ github.event.inputs.target_domain_base }}" -e "source_domain=${{ github.event.inputs.source_domain_base }}"
