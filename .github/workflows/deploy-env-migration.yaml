@@ -284,12 +284,12 @@ jobs:
           jwtGithubAudience: vault
           ignoreNotFound: true
           secrets: |
-            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64
-            ${{ env.VAULT_KV }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET
-            ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY
-            ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY
-            ${{ env.VAULT_KV }} TF_STATE_REGION | MIGRATION_S3_REGION
-            ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT
+            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+            ${{ env.VAULT_KV }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET ;
+            ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY ;
+            ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY ;
+            ${{ env.VAULT_KV }} TF_STATE_REGION | MIGRATION_S3_REGION ;
+            ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT ;
 
       - name: Configure SSH Key
         run: |
