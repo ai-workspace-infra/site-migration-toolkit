@@ -53,7 +53,7 @@ Provides the universal foundational infrastructure, IAM, and observability stack
 | `/vmalert/*` | `127.0.0.1:8880` | VictoriaMetrics Alerting Engine |
 | `/alertmgr/*` | `127.0.0.1:9059` | Alertmanager Routing & Dispatch |
 | `/blackbox/*` | `127.0.0.1:9115` | Blackbox Exporter Network Probing |
-| `/haproxy/pg-meta-1/*` | `10.146.0.6:9101` | HAProxy Admin UI route |
+| ~~`/haproxy/pg-meta-1/*`~~ | ~~`10.146.0.6:9101`~~ | ⚠️ **[Planned for Deprecation]** HAProxy Admin UI route |
 | ~~`/insight/*`~~ | ~~`127.0.0.1:8082`~~ | ⚠️ **[Planned for Deprecation]** Insight Workbench Data Analysis Desk |
 
 ## 4. Cleaned up Infrastructure

@@ -53,7 +53,7 @@
 | `/vmalert/*` | `127.0.0.1:8880` | VictoriaMetrics Alert 告警引擎 |
 | `/alertmgr/*` | `127.0.0.1:9059` | Alertmanager 告警路由与发送 |
 | `/blackbox/*` | `127.0.0.1:9115` | Blackbox Exporter 网络拨测 |
-| `/haproxy/pg-meta-1/*` | `10.146.0.6:9101` | HAProxy 管理控制台转发 |
+| ~~`/haproxy/pg-meta-1/*`~~ | ~~`10.146.0.6:9101`~~ | ⚠️ **[计划下线]** HAProxy 管理控制台转发 |
 | ~~`/insight/*`~~ | ~~`127.0.0.1:8082`~~ | ⚠️ **[计划下线]** Insight Workbench 数据分析台 |
 
 ## 4. 已清理下线的基础设施
