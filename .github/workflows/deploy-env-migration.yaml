@@ -136,26 +136,24 @@ jobs:
       - name: Install render deps
         run: pip install --quiet pyyaml jinja2
 
-      - name: Configure remote backend
-        working-directory: ${{ env.ENV_DIR }}
-        env:
-          TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
-          TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
-        run: python3 $GITHUB_WORKSPACE/${{ env.VPS_ROOT }}/scripts/render_backend_tf.py backend.tf
-
-      - name: Override VPS Plan (Matrix Support)
-        working-directory: ${{ env.VPS_ROOT }}
+      - name: Map Instance Plan
+        id: plan
         run: |
           if [ "${{ github.event.inputs.instance_plan }}" == "2C4G" ]; then
-            sed -i 's/plan: .*/plan: vc2-2c-4gb/g' config/resources/site-migration-toolkit.yaml
+            echo "api=vc2-2c-4gb" >> "$GITHUB_OUTPUT"
           else
-            sed -i 's/plan: .*/plan: vc2-4c-8gb/g' config/resources/site-migration-toolkit.yaml
+            echo "api=vc2-4c-8gb" >> "$GITHUB_OUTPUT"
           fi
 
       - name: generate.py render
         working-directory: ${{ env.VPS_ROOT }}
-        # 强制指定 envs/site-migration-toolkit 生成 tfvars 和显式 HCL
-        run: python3 scripts/generate.py render --resources config/resources/site-migration-toolkit.yaml --workdir envs/site-migration-toolkit
+        env:
+          TARGET_DOMAIN: ${{ github.event.inputs.target_domains }}
+          INSTANCE_PLAN_API: ${{ steps.plan.outputs.api }}
+          TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
+          TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+          TF_WORKSPACE_PREFIX: env
+        run: python3 scripts/generate.py render --resources config/resources/${{ github.event.inputs.target_domains }}.yaml --workdir envs/site-migration-toolkit
 
       - name: Terraform init
         working-directory: ${{ env.ENV_DIR }}
@@ -168,8 +166,7 @@ jobs:
         run: |
           terraform init -input=false \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=site-migration-toolkit/terraform.tfstate" \
-            -backend-config="region=${TF_STATE_REGION}"
+            -backend-config="key=site-migration-toolkit/terraform.tfstate"
 
       - name: Terraform Apply / Destroy
         working-directory: ${{ env.ENV_DIR }}
@@ -177,7 +174,9 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
           TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
-        run: terraform ${{ github.event.inputs.terraform_action }} -auto-approve -input=false
+        run: |
+          terraform workspace select ${{ github.event.inputs.target_domains }} || terraform workspace new ${{ github.event.inputs.target_domains }}
+          terraform ${{ github.event.inputs.terraform_action }} -auto-approve -input=false
 
       - name: generate.py inventory
         if: ${{ github.event.inputs.terraform_action == 'apply' }}
@@ -186,7 +185,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
         # 同样指定 envs/site-migration-toolkit
-        run: python3 scripts/generate.py inventory --resources config/resources/site-migration-toolkit.yaml --workdir envs/site-migration-toolkit
+        run: python3 scripts/generate.py inventory --resources config/resources/${{ github.event.inputs.target_domains }}.yaml --workdir envs/site-migration-toolkit
 
       - name: Build deploy matrix
         id: matrix
