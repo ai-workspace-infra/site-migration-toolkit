@@ -1,0 +1,52 @@
+---
+- name: Ensure backup directory exists
+  file:
+    path: "{{ backup_dir }}/configs"
+    state: directory
+    mode: '0755'
+
+- name: Backup Caddy configurations
+  shell: |
+    cp -r /etc/caddy/conf.d "{{ backup_dir }}/configs/caddy_conf.d"
+  args:
+    creates: "{{ backup_dir }}/configs/caddy_conf.d"
+
+- name: Backup Docker Compose directories
+  shell: |
+    cp -r /opt/cloud-neutral/accounts/managed/prod "{{ backup_dir }}/configs/accounts"
+    cp -r /opt/cloud-neutral/console/console-c894924-contabo "{{ backup_dir }}/configs/console"
+    cp -r /opt/cloud-neutral/postgresql.svc.plus/deploy/docker "{{ backup_dir }}/configs/postgresql"
+    cp -r /opt/cloud-neutral/stunnel-server "{{ backup_dir }}/configs/stunnel"
+  args:
+    creates: "{{ backup_dir }}/configs/accounts"
+
+- name: Ensure image backup directory exists
+  file:
+    path: "{{ backup_dir }}/images"
+    state: directory
+
+- name: Export Docker images
+  shell: |
+    docker save ghcr.io/x-evor/console:081bedd637f0b1983f73bb5d00bf58a11c507e21 | gzip > "{{ backup_dir }}/images/console.tar.gz"
+    docker save ghcr.io/x-evor/accounts:sha-7292fca3b8a0bcf18802a90070190a6515225a17 | gzip > "{{ backup_dir }}/images/accounts.tar.gz"
+    docker save postgres-extensions:17 | gzip > "{{ backup_dir }}/images/postgres.tar.gz"
+    docker save ghcr.io/x-evor/stunnel-server:2330d36 | gzip > "{{ backup_dir }}/images/stunnel.tar.gz"
+  args:
+    creates: "{{ backup_dir }}/images/postgres.tar.gz"
+
+- name: Ensure database dump directory exists
+  file:
+    path: "{{ backup_dir }}/db"
+    state: directory
+
+- name: Execute pg_dumpall in container
+  shell: |
+    docker exec postgresql-svc-plus pg_dumpall -U svcplus_vps > "{{ backup_dir }}/db/legacy_saas_full_dump.sql"
+  args:
+    creates: "{{ backup_dir }}/db/legacy_saas_full_dump.sql"
+
+- name: Archive all backups into a single tarball
+  archive:
+    path: "{{ backup_dir }}"
+    dest: "/backup/saas-legacy-backup-{{ backup_date }}.tar.gz"
+    format: gz

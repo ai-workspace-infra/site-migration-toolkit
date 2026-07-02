@@ -1,0 +1,13 @@
+---
+- name: Web SaaS Legacy Backup and Vault Integration
+  hosts: legacy_saas
+  become: yes
+  vars:
+    vault_addr: "https://vault.svc.plus"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') | default('PLACEHOLDER_VAULT_TOKEN', true) }}"
+    backup_date: "{{ ansible_date_time.date }}"
+    backup_dir: "/backup/saas-legacy-{{ backup_date }}"
+
+  roles:
+    - role_vault_seeder
+    - role_state_backup

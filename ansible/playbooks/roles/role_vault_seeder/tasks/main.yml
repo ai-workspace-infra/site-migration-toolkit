@@ -1,0 +1,57 @@
+---
+- name: Push database secrets to Vault
+  uri:
+    url: "{{ vault_addr }}/v1/secret/data/saas/legacy/database"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    body_format: json
+    body:
+      data:
+        POSTGRES_USER: "{{ pg_user | default('svcplus_vps') }}"
+        POSTGRES_PASSWORD: "{{ pg_password | default('PLACEHOLDER', true) }}"
+  register: vault_db
+  changed_when: vault_db.status == 200
+
+- name: Push internal auth tokens to Vault
+  uri:
+    url: "{{ vault_addr }}/v1/secret/data/saas/legacy/internal_auth"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    body_format: json
+    body:
+      data:
+        INTERNAL_SERVICE_TOKEN: "{{ internal_token | default('PLACEHOLDER', true) }}"
+        BRIDGE_AUTH_TOKEN: "{{ bridge_auth | default('PLACEHOLDER', true) }}"
+        BRIDGE_REVIEW_AUTH_TOKEN: "{{ bridge_review | default('PLACEHOLDER', true) }}"
+  register: vault_auth
+  changed_when: vault_auth.status == 200
+
+- name: Push third party API keys to Vault
+  uri:
+    url: "{{ vault_addr }}/v1/secret/data/saas/legacy/third_party"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    body_format: json
+    body:
+      data:
+        CLOUDFLARE_API_TOKEN: "{{ cf_token | default('PLACEHOLDER', true) }}"
+        SMTP_PASSWORD: "{{ smtp_pass | default('PLACEHOLDER', true) }}"
+        SMTP_USERNAME: "{{ smtp_user | default('manbuzhe2009@qq.com') }}"
+  register: vault_tp
+  changed_when: vault_tp.status == 200
+
+- name: Push infrastructure tokens to Vault
+  uri:
+    url: "{{ vault_addr }}/v1/secret/data/saas/legacy/infrastructure"
+    method: POST
+    headers:
+      X-Vault-Token: "{{ vault_token }}"
+    body_format: json
+    body:
+      data:
+        VAULT_SERVER_ROOT_ACCESS_TOKEN: "{{ vault_root_token | default('PLACEHOLDER', true) }}"
+  register: vault_infra
+  changed_when: vault_infra.status == 200
