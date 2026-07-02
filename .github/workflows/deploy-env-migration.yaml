@@ -45,6 +45,14 @@ on:
           - ai-workspace
           - web-saas
           - infra-platform
+      instance_plan:
+        description: "选择 VPS 规格 (全域建议 4C8G，单域支持 2C4G 矩阵)"
+        required: true
+        default: "4C8G"
+        type: choice
+        options:
+          - 4C8G
+          - 2C4G
       toolkit_action:
         description: "Toolkit 执行动作"
         required: false
@@ -134,6 +142,15 @@ jobs:
           TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
           TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
         run: python3 $GITHUB_WORKSPACE/${{ env.VPS_ROOT }}/scripts/render_backend_tf.py backend.tf
+
+      - name: Override VPS Plan (Matrix Support)
+        working-directory: ${{ env.VPS_ROOT }}
+        run: |
+          if [ "${{ github.event.inputs.instance_plan }}" == "2C4G" ]; then
+            sed -i 's/plan: .*/plan: vc2-2c-4gb/g' config/resources/site-migration-toolkit.yaml
+          else
+            sed -i 's/plan: .*/plan: vc2-4c-8gb/g' config/resources/site-migration-toolkit.yaml
+          fi
 
       - name: generate.py render
         working-directory: ${{ env.VPS_ROOT }}
