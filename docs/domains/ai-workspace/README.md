@@ -11,6 +11,7 @@
 - **OpenClaw (Bot)**: `openclaw.svc.plus` (127.0.0.1:18789)
 - **Hermes**: `hermes.svc.plus` (127.0.0.1:18180)
 - **QMD**
+- **PostgreSQL**: `postgresql-ai-workspace.onwalk.net` - AI 核心业务域强状态数据库（与主服务共用主机资源）
 
 ### 相关数据库资产
 运行在 AI 核心服务库 Docker (`postgresql-svc-plus`, `127.0.0.1:15432`) 下的业务系统库：

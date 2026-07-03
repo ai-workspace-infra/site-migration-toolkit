@@ -8,6 +8,7 @@
 - **Gitea**: `gitea.svc.plus` (localhost:3001) - 私有 Git 代码托管平台
 - **Vault**: `vault.svc.plus` (127.0.0.1:8200) - 统一凭证与配置中心
 - **IAM (Zitadel)**: `iam.svc.plus` - IAM Global SSO (API & UI)
+- **PostgreSQL**: `postgresql-platform.onwalk.net` - 开放平台核心强状态数据库（与主服务共用主机资源）
 - **PostgreSQL Tunnel**: `postgresql-contabo...` - 用于 TLS 握手网络探针或特定代理入口的静态响应端点
 
 ### 可观测性底座 (Observability Stack)

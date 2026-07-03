@@ -52,6 +52,16 @@
 | **独立用户** | `account_user` |
 | **鉴权连接串参考** | `postgres://account_user:${ACCOUNT_PG_PASSWORD}@127.0.0.1:15432/account?sslmode=disable` |
 
+### 1.5 PostgreSQL (AI Workspace 核心数据库)
+| 属性 | 详情 |
+| :--- | :--- |
+| **Caddy 外网入口** | *内部网络调用，不暴露公网 HTTP* |
+| **本地监听端口** | `127.0.0.1:15432` / 内部网络 |
+| **Playbook 部署模式** | `postgres-standalone` (与主服务共用主机资源) |
+| **IaC 所需资源** | DNS 别名记录 (`postgresql-ai-workspace.onwalk.net`)，开启 Backups |
+| **存储依赖** | `PGDATA` 目录及云端每日自动备份 |
+| **独立数据库** | `account`, `litellm`, `openclaw`, `qmd`, `rag`, `notification`, `scheduler`, `audit`, `artifact` |
+
 ---
 
 ## 2. Open Platform Infra 域 (基础设施平台)
@@ -91,6 +101,16 @@
 | **独立数据库** | `gitea` |
 | **独立用户** | `gitea_user` |
 | **鉴权连接串参考** | `postgres://gitea_user:${GITEA_PG_PASSWORD}@127.0.0.1:15432/gitea?sslmode=disable` |
+
+### 2.4 PostgreSQL (Open Platform Infra 核心数据库)
+| 属性 | 详情 |
+| :--- | :--- |
+| **Caddy 外网入口** | *内部网络调用，不暴露公网 HTTP* |
+| **本地监听端口** | `127.0.0.1:15432` / 内部网络 |
+| **Playbook 部署模式** | `postgres-standalone` (与主服务共用主机资源) |
+| **IaC 所需资源** | DNS 别名记录 (`postgresql-platform.onwalk.net`)，开启 Backups |
+| **存储依赖** | `PGDATA` 目录及云端每日自动备份 |
+| **独立数据库** | `vault_storage`, `zitadel`, `gitea` |
 
 ---
 
@@ -136,8 +156,8 @@
 | :--- | :--- |
 | **Caddy 外网入口** | *内部私网或专有管理通道调用，不暴露公网 HTTP* |
 | **本地监听端口** | `127.0.0.1:15432` / 内部网络 |
-| **Playbook 部署模式** | `postgres-standalone` (原生 Systemd 守护进程) |
-| **IaC 所需资源** | DNS A 记录 (`postgresql-saas.onwalk.net`)，开启 Backups |
+| **Playbook 部署模式** | `postgres-standalone` (与主服务共用主机资源) |
+| **IaC 所需资源** | DNS 别名记录 (`postgresql-saas.onwalk.net`)，开启 Backups |
 | **存储依赖** | `PGDATA` 目录及云端每日自动备份 |
 | **独立数据库** | *N/A (作为承载底层)* |
 | **独立用户** | `postgres` (Root), 其他按服务分配 |
