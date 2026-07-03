@@ -14,7 +14,7 @@
 | **存储依赖** | Redis 高频缓存, 本地 `litellm-config.yaml` |
 | **独立数据库** | `litellm` |
 | **独立用户** | `litellm_user` |
-| **鉴权连接串参考** | `postgres://litellm_user:${LITELLM_PG_PASSWORD}@127.0.0.1:15432/litellm?sslmode=disable` |
+| **鉴权连接串参考** | `postgres://litellm_user:${LITELLM_PG_PASSWORD}@postgresql-ai-workspace.onwalk.net:15432/litellm?sslmode=disable` |
 
 ### 1.2 OpenClaw (Bot 代理后端)
 | 属性 | 详情 |
@@ -38,7 +38,7 @@
 | **存储依赖** | PostgreSQL (启用 pgvector 扩展), 本地文档分片卷 |
 | **独立数据库** | `rag` |
 | **独立用户** | `rag_user` |
-| **鉴权连接串参考** | `postgres://rag_user:${RAG_PG_PASSWORD}@127.0.0.1:15432/rag?sslmode=disable` |
+| **鉴权连接串参考** | `postgres://rag_user:${RAG_PG_PASSWORD}@postgresql-ai-workspace.onwalk.net:15432/rag?sslmode=disable` |
 
 ### 1.4 Account (统一账户服务)
 | 属性 | 详情 |
@@ -50,7 +50,7 @@
 | **存储依赖** | 无状态 |
 | **独立数据库** | `account` |
 | **独立用户** | `account_user` |
-| **鉴权连接串参考** | `postgres://account_user:${ACCOUNT_PG_PASSWORD}@127.0.0.1:15432/account?sslmode=disable` |
+| **鉴权连接串参考** | `postgres://account_user:${ACCOUNT_PG_PASSWORD}@postgresql-ai-workspace.onwalk.net:15432/account?sslmode=disable` |
 
 ### 1.5 PostgreSQL (AI Workspace 核心数据库)
 | 属性 | 详情 |
@@ -61,6 +61,7 @@
 | **IaC 所需资源** | DNS 别名记录 (`postgresql-ai-workspace.onwalk.net`)，开启 Backups |
 | **存储依赖** | `PGDATA` 目录及云端每日自动备份 |
 | **独立数据库** | `account`, `litellm`, `openclaw`, `qmd`, `rag`, `notification`, `scheduler`, `audit`, `artifact` |
+| **独立用户** | `account_user`, `litellm_user`, `rag_user` |
 
 ---
 
@@ -76,7 +77,7 @@
 | **存储依赖** | PostgreSQL 作为唯一强状态依赖 |
 | **独立数据库** | `vault_storage` |
 | **独立用户** | `vault_storage` |
-| **鉴权连接串参考** | `postgres://vault_storage:${VAULT_PG_PASSWORD}@127.0.0.1:15432/vault_storage?sslmode=disable` |
+| **鉴权连接串参考** | `postgres://vault_storage:${VAULT_PG_PASSWORD}@postgresql-platform.onwalk.net:15432/vault_storage?sslmode=disable` |
 
 ### 2.2 Zitadel (全局 SSO / IAM)
 | 属性 | 详情 |
@@ -88,7 +89,7 @@
 | **存储依赖** | MachineKey 主密钥挂载 (用于加解密用户信息) |
 | **独立数据库** | `zitadel` |
 | **独立用户** | `zitadel_user` |
-| **鉴权连接串参考** | `postgres://zitadel_user:${ZITADEL_PG_PASSWORD}@127.0.0.1:15432/zitadel?sslmode=disable` |
+| **鉴权连接串参考** | `postgres://zitadel_user:${ZITADEL_PG_PASSWORD}@postgresql-platform.onwalk.net:15432/zitadel?sslmode=disable` |
 
 ### 2.3 Gitea (私有代码托管)
 | 属性 | 详情 |
@@ -100,7 +101,7 @@
 | **存储依赖** | `/var/lib/gitea/data` (裸 Git 仓库及 LFS 附件) |
 | **独立数据库** | `gitea` |
 | **独立用户** | `gitea_user` |
-| **鉴权连接串参考** | `postgres://gitea_user:${GITEA_PG_PASSWORD}@127.0.0.1:15432/gitea?sslmode=disable` |
+| **鉴权连接串参考** | `postgres://gitea_user:${GITEA_PG_PASSWORD}@postgresql-platform.onwalk.net:15432/gitea?sslmode=disable` |
 
 ### 2.4 PostgreSQL (Open Platform Infra 核心数据库)
 | 属性 | 详情 |
@@ -111,6 +112,7 @@
 | **IaC 所需资源** | DNS 别名记录 (`postgresql-platform.onwalk.net`)，开启 Backups |
 | **存储依赖** | `PGDATA` 目录及云端每日自动备份 |
 | **独立数据库** | `vault_storage`, `zitadel`, `gitea` |
+| **独立用户** | `vault_storage`, `zitadel_user`, `gitea_user` |
 
 ---
 
@@ -139,7 +141,7 @@
 | **存储依赖** | 支付 Webhook 接收队列 |
 | **独立数据库** | `billing` |
 | **独立用户** | `billing_user` |
-| **鉴权连接串参考** | `postgres://billing_user:${BILLING_PG_PASSWORD}@127.0.0.1:15432/billing?sslmode=disable` |
+| **鉴权连接串参考** | `postgres://billing_user:${BILLING_PG_PASSWORD}@postgresql-saas.onwalk.net:15432/billing?sslmode=disable` |
 
 ### 3.3 Install (安装脚本分发服务)
 | 属性 | 详情 |
@@ -160,4 +162,4 @@
 | **IaC 所需资源** | DNS 别名记录 (`postgresql-saas.onwalk.net`)，开启 Backups |
 | **存储依赖** | `PGDATA` 目录及云端每日自动备份 |
 | **独立数据库** | *N/A (作为承载底层)* |
-| **独立用户** | `postgres` (Root), 其他按服务分配 |
+| **独立用户** | `billing_user` |
