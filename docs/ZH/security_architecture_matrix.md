@@ -130,3 +130,14 @@
 | **IaC 所需资源** | DNS A 记录 (install) |
 | **独立数据库** | *N/A* |
 | **独立用户** | *N/A* |
+
+### 3.4 PostgreSQL (Web SaaS 核心数据库)
+| 属性 | 详情 |
+| :--- | :--- |
+| **Caddy 外网入口** | *内部私网或专有管理通道调用，不暴露公网 HTTP* |
+| **本地监听端口** | `127.0.0.1:15432` / 内部网络 |
+| **Playbook 部署模式** | `postgres-standalone` (原生 Systemd 守护进程) |
+| **IaC 所需资源** | DNS A 记录 (`postgresql-saas.onwalk.net`)，开启 Backups |
+| **存储依赖** | `PGDATA` 目录及云端每日自动备份 |
+| **独立数据库** | *N/A (作为承载底层)* |
+| **独立用户** | `postgres` (Root), 其他按服务分配 |

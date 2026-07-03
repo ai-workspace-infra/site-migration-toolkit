@@ -13,6 +13,9 @@
 - **Accounts**: `accounts.svc.plus` - 统一账户服务
 - **Install Scripts**: `install.svc.plus` (302 Redir -> Github) - Short link distribution for curl-based one-click installation scripts
 
+### 核心数据库层 (Database)
+- **PostgreSQL**: `postgresql-saas.onwalk.net` - 承载 Web SaaS 业务的强状态独立数据库服务
+
 ### 加速 Pools (代理节点)
 - **JP XHTTP / Xray**: `jp-xhttp.svc.plus` (跨越代理隧道 `/dev/shm/xray.sock`)
 - **TKY Proxy**: `tky-proxy.svc.plus` (跨越代理隧道 `/dev/shm/xray.sock`)
