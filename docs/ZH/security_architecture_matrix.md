@@ -96,26 +96,37 @@
 
 ## 3. Web SaaS 域
 
-### 3.1 Console (主控台前端)
+### 3.1 Console (主控台前端与统一路由)
 | 属性 | 详情 |
 | :--- | :--- |
 | **Caddy 外网入口** | `console.svc.plus` |
 | **本地监听端口** | `127.0.0.1:3000` |
+| **子路由挂载** | `/billing` (计费与支付流水), `/ebook` (在线文档/开源解决方案静态资源) |
 | **Playbook 部署模式** | `vhosts` (基于 Node.js / Next.js) |
 | **IaC 所需资源** | DNS A 记录 (console) |
-| **存储依赖** | CDN 静态资源, 无服务器级状态 |
+| **存储依赖** | CDN 静态资源, `/opt/modern-it-history/current` (ebook 挂载) |
 | **独立数据库** | *N/A* |
 | **独立用户** | *N/A* |
-| **鉴权连接串参考** | (无直连底层库，连接后端: `Accounts`, `billing`, `xworkmate-bridge`) |
+| **鉴权连接串参考** | (无直连底层库，连接后端: `Accounts`, `xworkmate-bridge`) |
 
-### 3.2 Billing (计费流水服务)
+### 3.2 Billing & Payment (计费流水后端服务)
 | 属性 | 详情 |
 | :--- | :--- |
-| **Caddy 外网入口** | `billing.svc.plus` |
+| **Caddy 外网入口** | 内部调用及前端路由分发 `console.svc.plus/billing` |
 | **本地监听端口** | 内部动态映射端口 |
 | **Playbook 部署模式** | `docker` / `vhosts` |
-| **IaC 所需资源** | DNS A 记录 (billing) |
+| **IaC 所需资源** | (统一复用 console 流量入口) |
 | **存储依赖** | 支付 Webhook 接收队列 |
 | **独立数据库** | `billing` |
 | **独立用户** | `billing_user` |
 | **鉴权连接串参考** | `postgres://billing_user:${BILLING_PG_PASSWORD}@127.0.0.1:15432/billing?sslmode=disable` |
+
+### 3.3 Install (安装脚本分发服务)
+| 属性 | 详情 |
+| :--- | :--- |
+| **Caddy 外网入口** | `install.svc.plus` |
+| **本地监听端口** | Caddy 内部 302 跳转规则 |
+| **Playbook 部署模式** | `vhosts` (Caddyfile Rewrite) |
+| **IaC 所需资源** | DNS A 记录 (install) |
+| **独立数据库** | *N/A* |
+| **独立用户** | *N/A* |

@@ -6,17 +6,12 @@
 
 本域主要由无状态前端服务、分发平台及代理隧道节点构成：
 
-### Web 服务与控制台
+### Web 服务与控制台 (核心入口)
 - **Console**: `console.svc.plus` (127.0.0.1:3000) - Web Site Home Page Control Panel
-- **Accounts**: `accounts.svc.plus`
-
-### 静态资源与分发
+  - **子路由 `/billing`**: 包含 Billing 计费流水、Payment Amount 等相关服务
+  - **子路由 `/ebook`**: 包含在线文档、开源解决方案等静态分发 (`/opt/modern-it-history/current`)
+- **Accounts**: `accounts.svc.plus` - 统一账户服务
 - **Install Scripts**: `install.svc.plus` (302 Redir -> Github) - Short link distribution for curl-based one-click installation scripts
-- **Ebook**: `ebook.svc.plus` (Static Files) - Modern IT History E-book (`/opt/modern-it-history/current`)
-
-### Xstream 加速服务与计费
-- **Billing**: `billing.svc.plus`
-- **Payment**: `stripe-pay.plus`
 
 ### 加速 Pools (代理节点)
 - **JP XHTTP / Xray**: `jp-xhttp.svc.plus` (跨越代理隧道 `/dev/shm/xray.sock`)
