@@ -364,17 +364,20 @@ jobs:
           go build -buildvcs=false -o dist/billing-service-linux-amd64 ./cmd/billing-service
           chmod 0755 dist/billing-service-linux-amd64
 
-      - name: Bootstrap shared network + stunnel certs
+      - name: Bootstrap Docker + shared network + stunnel certs
         working-directory: playbooks
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         run: |
           cat > /tmp/web-saas-bootstrap.yml <<'EOF'
-          - name: Ensure shared cn-toolkit Docker network and stunnel certs exist
+          - name: Ensure Docker engine, shared network, and stunnel certs exist
             hosts: "{{ target_host }}"
             become: true
-            gather_facts: false
+            gather_facts: true
+            roles:
+              - roles/vhosts/docker
+              - roles/host/stunnel-certs
             tasks:
               - name: Check for cn-toolkit-shared Docker network
                 ansible.builtin.command: docker network inspect cn-toolkit-shared
@@ -384,8 +387,6 @@ jobs:
               - name: Create cn-toolkit-shared Docker network when missing
                 ansible.builtin.command: docker network create cn-toolkit-shared
                 when: shared_network_inspect.rc != 0
-            roles:
-              - roles/host/stunnel-certs
           EOF
           ansible-playbook -i ../cmdb/inventory.ini /tmp/web-saas-bootstrap.yml \
             -e "target_host=${{ matrix.host }}"
