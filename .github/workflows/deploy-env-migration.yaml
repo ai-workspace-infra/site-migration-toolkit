@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       infra_ref:
-        description: "ai-workspace-infra git ref"
+        description: "iac_modules & playbooks 仓库共用的 Git Ref (分支名或 Tag 均可)"
         required: false
         default: "main"
         type: string
@@ -54,11 +54,11 @@ on:
           - 4C8G
           - 2C4G
       toolkit_action:
-        description: "Toolkit 执行动作"
+        description: "Toolkit 执行动作 (deploy = 仅在新环境部署全部服务，不执行数据迁移)"
         required: false
         default: "migrate"
         type: choice
-        options: [migrate, backup, restore]
+        options: [migrate, backup, restore, deploy]
       terraform_action:
         description: "apply 创建/更新，destroy 销毁"
         required: false
@@ -274,7 +274,7 @@ jobs:
   data_migration:
     name: Migrate Site Data (Source -> Target)
     needs: deploy_base
-    if: ${{ (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && github.event.inputs.terraform_action == 'apply' }}
+    if: ${{ (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && github.event.inputs.terraform_action == 'apply' && github.event.inputs.toolkit_action != 'deploy' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download CMDB
