@@ -58,6 +58,31 @@ provision 出来的主机上。
 这 6 个 key 都需要提前在 Vault 里手动填好真实值；缺哪个，对应 ansible 任务会在
 assert/连接阶段明确报错，不会静默用空值跑下去。
 
-**唯一需要额外确认的权限前置**：Vault 里 `github-actions-site-migration-toolkit`
-这个角色的 policy 要能 `read` `kv/data/WEB_SAAS`（以及 `kv/data/CICD` 里的
-`SSH_PRIVATE_DEPLOY_KEY_B64`，用于 SSH 到新主机）。
+### 必须的 Vault Policy (已在 [run #28732574921](https://github.com/ai-workspace-infra/site-migration-toolkit/actions/runs/28732574921/job/85200873591) 实测确认为阻塞项)
+
+`Load Vault secrets` 这一步实测会因为权限不足直接 `403 Forbidden`（整个 job 在
+读密钥这一步就失败，后面所有部署 step 都不会执行）。原因是 Vault 里
+`github-actions-site-migration-toolkit` 这个角色的 policy 只覆盖了
+`kv/data/CICD`，没有覆盖新加的 `kv/data/WEB_SAAS` 路径。
+
+需要给这个 role 绑定的 policy 补上（KV v2 读取同时需要 `data` 和 `metadata`
+两个子路径的权限）：
+
+```hcl
+path "kv/data/WEB_SAAS" {
+  capabilities = ["read"]
+}
+
+path "kv/metadata/WEB_SAAS" {
+  capabilities = ["read"]
+}
+```
+
+在 Vault 里操作步骤大致是：
+
+1. 打开 [kv/WEB_SAAS](https://vault.svc.plus/ui/vault/secrets/kv/list/WEB_SAAS/) 确认 6 个 key 都已经填好真实值。
+2. 找到 `github-actions-site-migration-toolkit` 这个 role 绑定的 policy（在 Vault UI 的 Access -> Policies 里），把上面这段 `path` 追加进去。
+3. 不需要重新生成 JWT role 本身，policy 更新后下次触发 workflow 即可读到。
+
+在这个 policy 补上之前，`target_domains=web-saas`(或 `all`) 的 run 会在
+`Load Vault secrets` 这一步就 403 失败，不会部署任何 web-saas 服务。
