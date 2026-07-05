@@ -210,8 +210,10 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy_base:
     name: Deploy Base Services on ${{ matrix.host }}
+    # 只负责 ai-workspace 域 (litellm/qmd/x-memory-hub/postgres/gateway-openclaw 等),
+    # 不要对 web-saas / infra-platform 域跑这个全家桶安装器。
     needs: provision
-    if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' }}
+    if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","ai-workspace"]'), github.event.inputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -269,12 +271,102 @@ jobs:
         run: bash scripts/run-on-host-bootstrap.sh
 
   # ---------------------------------------------------------------------------
+  # 步骤 2b: Web SaaS 域服务部署 (console / accounts / postgresql)
+  # billing-service 暂不在此处理: deploy_billing_service.yml 强制要求一个
+  # controller 本地的二进制产物 (BILLING_SERVICE_BINARY_ARTIFACT), 这个产物
+  # 目前只有 billing-service 自己仓库的 build job 会生成, 本流水线拿不到,
+  # 直接跑会在 pre_tasks assert 阶段失败。等确定好产物来源(自行编译 /
+  # 触发 billing-service 自己的 pipeline)后再补上。
+  # ---------------------------------------------------------------------------
+  deploy_web_saas:
+    name: Deploy Web SaaS Services on ${{ matrix.host }}
+    needs: provision
+    if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","web-saas"]'), github.event.inputs.target_domains) }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(needs.provision.outputs.hosts) }}
+    steps:
+      - name: Checkout playbooks
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-infra/playbooks
+          ref: ${{ github.event.inputs.infra_ref }}
+          path: playbooks
+
+      - name: Download CMDB
+        uses: actions/download-artifact@v8
+        with:
+          name: site-migration-toolkit-cmdb
+          path: cmdb
+
+      - name: Load Vault secrets
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
+
+      - name: Wait for host SSH
+        run: |
+          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
+          for _ in $(seq 1 60); do
+            if nc -z -w 5 "$ip" 22; then exit 0; fi
+            sleep 10
+          done
+          exit 1
+
+      - name: Install Ansible
+        run: pip install --quiet ansible
+
+      - name: Deploy postgresql.svc.plus
+        working-directory: playbooks
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        run: |
+          ansible-playbook -i ../cmdb/inventory.ini deploy_postgresql_svc_plus.yml \
+            -e "postgresql_service_hosts=${{ matrix.host }}"
+
+      - name: Deploy accounts.svc.plus
+        working-directory: playbooks
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+          ACCOUNTS_PULL_IMAGE: "true"
+        run: |
+          ansible-playbook -i ../cmdb/inventory.ini deploy_accounts_svc_plus.yml \
+            -e "accounts_service_hosts=${{ matrix.host }}"
+
+      - name: Deploy console.svc.plus
+        working-directory: playbooks
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        run: |
+          ansible-playbook -i ../cmdb/inventory.ini deploy_console_svc_plus.yml \
+            -e "console_service_target_host=${{ matrix.host }}"
+
+  # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
   # ---------------------------------------------------------------------------
   data_migration:
     name: Migrate Site Data (Source -> Target)
-    needs: deploy_base
-    if: ${{ (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && github.event.inputs.terraform_action == 'apply' && github.event.inputs.toolkit_action != 'deploy' }}
+    needs: [deploy_base, deploy_web_saas]
+    if: ${{ always() && (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && (needs.deploy_web_saas.result == 'success' || needs.deploy_web_saas.result == 'skipped') && github.event.inputs.terraform_action == 'apply' && github.event.inputs.toolkit_action != 'deploy' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download CMDB
