@@ -60,29 +60,66 @@ assert/连接阶段明确报错，不会静默用空值跑下去。
 
 ### 必须的 Vault Policy (已在 [run #28732574921](https://github.com/ai-workspace-infra/site-migration-toolkit/actions/runs/28732574921/job/85200873591) 实测确认为阻塞项)
 
-`Load Vault secrets` 这一步实测会因为权限不足直接 `403 Forbidden`（整个 job 在
-读密钥这一步就失败，后面所有部署 step 都不会执行）。原因是 Vault 里
-`github-actions-site-migration-toolkit` 这个角色的 policy 只覆盖了
-`kv/data/CICD`，没有覆盖新加的 `kv/data/WEB_SAAS` 路径。
+`Load Vault secrets` 这一步实测 `403 Forbidden`（整个 job 在读密钥这一步就失败，
+后面所有部署 step 都不会执行）。
 
-需要给这个 role 绑定的 policy 补上（KV v2 读取同时需要 `data` 和 `metadata`
-两个子路径的权限）：
+**根因**：`github-actions-site-migration-toolkit` 这个 JWT role 初始化时
+（见 [walkthrough.md §4](../../ZH/BackUP/Site-Migration/walkthrough.md)）**没有自己的
+policy，借用的是 `token_policies: ["github-actions-xworkspace-console"]`**。而那个
+policy（定义在 xworkspace-console 仓库
+`docs/operations/vault-github-actions.md`）只覆盖 `kv/data/CICD` 和
+`kv/data/openclaw` 两条路径，所以读新加的 `kv/data/WEB_SAAS` 必然 403。
 
-```hcl
+**修复（推荐做法：给本仓库建独立 policy，不再蹭 xworkspace-console 的）**——
+用管理员 token 在 `vault.svc.plus` 执行：
+
+```bash
+export VAULT_ADDR=https://vault.svc.plus
+export VAULT_TOKEN="hvs.xxxxxxxxx"   # 管理员 Token
+
+# 1. 独立 policy：CICD 共享键(SSH/TF/Vultr) + web-saas 专属键
+vault policy write github-actions-site-migration-toolkit - <<'EOF'
+path "kv/data/CICD" {
+  capabilities = ["read"]
+}
+path "kv/metadata/CICD" {
+  capabilities = ["read", "list"]
+}
 path "kv/data/WEB_SAAS" {
   capabilities = ["read"]
 }
-
 path "kv/metadata/WEB_SAAS" {
-  capabilities = ["read"]
+  capabilities = ["read", "list"]
 }
+EOF
+
+# 2. 把 role 的 token_policies 从借用的 xworkspace-console 切换到独立 policy
+#    (其余 bound_claims 参数与 walkthrough.md 首次初始化保持一致)
+vault write auth/jwt/role/github-actions-site-migration-toolkit - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "repository",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "repository": "ai-workspace-infra/site-migration-toolkit",
+    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
+  },
+  "token_policies": ["github-actions-site-migration-toolkit"],
+  "token_ttl": "20m",
+  "token_max_ttl": "30m"
+}
+EOF
 ```
 
-在 Vault 里操作步骤大致是：
+> 备选做法是直接往共享的 `github-actions-xworkspace-console` policy 里追加
+> WEB_SAAS 路径，改动更小，但会让 xworkspace-console 仓库的流水线也能读到
+> web-saas 的数据库密码，不符合最小权限，不推荐。
 
-1. 打开 [kv/WEB_SAAS](https://vault.svc.plus/ui/vault/secrets/kv/list/WEB_SAAS/) 确认 6 个 key 都已经填好真实值。
-2. 找到 `github-actions-site-migration-toolkit` 这个 role 绑定的 policy（在 Vault UI 的 Access -> Policies 里），把上面这段 `path` 追加进去。
-3. 不需要重新生成 JWT role 本身，policy 更新后下次触发 workflow 即可读到。
+操作完成后：
 
-在这个 policy 补上之前，`target_domains=web-saas`(或 `all`) 的 run 会在
-`Load Vault secrets` 这一步就 403 失败，不会部署任何 web-saas 服务。
+1. 打开 [kv/WEB_SAAS](https://vault.svc.plus/ui/vault/secrets/kv/list/WEB_SAAS/) 确认 6 个 key 都已填好真实值。
+2. 直接重新触发 workflow 即可，role/policy 变更立即生效，无需其他操作。
+
+在修复之前，`target_domains=web-saas`(或 `all`) 的 run 会在 `Load Vault secrets`
+这一步就 403 失败，不会部署任何 web-saas 服务。
