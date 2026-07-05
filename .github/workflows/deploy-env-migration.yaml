@@ -277,11 +277,13 @@ jobs:
   #   - cn-toolkit-shared Docker 网络 (没有任何 playbook 会创建它, 全靠约定已存在)
   #   - stunnel 自签证书 (postgresql_service 角色如果证书缺失会直接 fail)
   #   - account 库 / account_user 账号 (全新 Postgres 实例, 需要先建库建用户)
-  # 需要下列 Vault(kv/data/CICD) 键才能跑通, 缺失时对应 ansible 断言会明确报错
-  # (不会静默用错误凭据):
-  #   WEB_SAAS_POSTGRES_ROOT_PASSWORD, WEB_SAAS_ACCOUNT_DB_PASSWORD,
-  #   WEB_SAAS_BILLING_DATABASE_URL, WEB_SAAS_INTERNAL_SERVICE_TOKEN,
-  #   WEB_SAAS_GHCR_USERNAME, WEB_SAAS_GHCR_PASSWORD
+  # Postgres 是全新初始化的实例: 第一次跑时 root/account_user 密码随机生成,
+  # 成功部署后用 `vault kv patch` 写回 kv/data/CICD (WEB_SAAS_POSTGRES_ROOT_PASSWORD /
+  # WEB_SAAS_ACCOUNT_DB_PASSWORD), 后续重跑同一个环境会先读回这两个 key 复用,
+  # 不会每次都生成新密码导致跟已初始化的容器对不上。
+  # GHCR/INTERNAL_SERVICE_TOKEN 复用 kv/data/CICD 里 console 服务自己流水线
+  # (ai-workspace-services/portal .github/workflows/pipeline.yaml) 已经在用的
+  # 同名真实 key (GHCR_TOKEN / INTERNAL_SERVICE_TOKEN), 不再发明新 key。
   # ---------------------------------------------------------------------------
   deploy_web_saas:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
@@ -321,15 +323,14 @@ jobs:
           method: jwt
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
+          exportToken: true
           ignoreNotFound: true
           secrets: |
             ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-            ${{ env.VAULT_KV }} WEB_SAAS_POSTGRES_ROOT_PASSWORD | POSTGRES_ROOT_PASSWORD ;
-            ${{ env.VAULT_KV }} WEB_SAAS_ACCOUNT_DB_PASSWORD | ACCOUNT_PG_PASSWORD ;
-            ${{ env.VAULT_KV }} WEB_SAAS_BILLING_DATABASE_URL | BILLING_DATABASE_URL ;
-            ${{ env.VAULT_KV }} WEB_SAAS_INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
-            ${{ env.VAULT_KV }} WEB_SAAS_GHCR_USERNAME | GHCR_USERNAME ;
-            ${{ env.VAULT_KV }} WEB_SAAS_GHCR_PASSWORD | GHCR_PASSWORD
+            ${{ env.VAULT_KV }} GHCR_TOKEN | GHCR_TOKEN ;
+            ${{ env.VAULT_KV }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
+            ${{ env.VAULT_KV }} WEB_SAAS_POSTGRES_ROOT_PASSWORD | EXISTING_POSTGRES_ROOT_PASSWORD ;
+            ${{ env.VAULT_KV }} WEB_SAAS_ACCOUNT_DB_PASSWORD | EXISTING_ACCOUNT_DB_PASSWORD
 
       - name: Configure SSH Key
         run: |
@@ -349,6 +350,24 @@ jobs:
 
       - name: Install Ansible
         run: pip install --quiet ansible
+
+      # Postgres 是全新初始化的实例, 密码没有任何外部系统需要提前知道; 但
+      # postgresql_service 角色只在数据目录首次初始化时用这个密码写入容器, 之后
+      # 重跑本 job (比如同一个环境后续再跑一次 deploy) 必须复用同一个密码, 否则
+      # accounts/billing 会连不上库。所以优先从 Vault 读上一次写回的值, 读不到
+      # (真正第一次跑) 才随机生成一个新的, 跑完成功后再写回 Vault。
+      - name: Resolve Postgres credentials
+        id: pg_creds
+        env:
+          EXISTING_ROOT: ${{ steps.vault.outputs.EXISTING_POSTGRES_ROOT_PASSWORD }}
+          EXISTING_ACCOUNT: ${{ steps.vault.outputs.EXISTING_ACCOUNT_DB_PASSWORD }}
+        run: |
+          root_password="${EXISTING_ROOT:-$(openssl rand -hex 24)}"
+          account_password="${EXISTING_ACCOUNT:-$(openssl rand -hex 24)}"
+          echo "::add-mask::${root_password}"
+          echo "::add-mask::${account_password}"
+          echo "root_password=${root_password}" >> "$GITHUB_OUTPUT"
+          echo "account_password=${account_password}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -396,7 +415,7 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          POSTGRES_ROOT_PASSWORD: ${{ steps.vault.outputs.POSTGRES_ROOT_PASSWORD }}
+          POSTGRES_ROOT_PASSWORD: ${{ steps.pg_creds.outputs.root_password }}
         run: |
           jq -n --arg pw "$POSTGRES_ROOT_PASSWORD" \
             '{postgresql_service_postgres_env_defaults: {POSTGRES_USER: "postgres", POSTGRES_PASSWORD: $pw, POSTGRES_DB: "postgres", PG_LOCAL_PORT: "5432", PG_MAJOR: "17", PG_DATA_PATH: "/data"}}' \
@@ -419,8 +438,8 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          POSTGRESQL_ADMIN_PASSWORD: ${{ steps.vault.outputs.POSTGRES_ROOT_PASSWORD }}
-          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
+          POSTGRESQL_ADMIN_PASSWORD: ${{ steps.pg_creds.outputs.root_password }}
+          ACCOUNT_PG_PASSWORD: ${{ steps.pg_creds.outputs.account_password }}
         run: |
           ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
             --limit "${{ matrix.host }}"
@@ -431,7 +450,7 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
           ACCOUNTS_PULL_IMAGE: "true"
-          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
+          ACCOUNT_PG_PASSWORD: ${{ steps.pg_creds.outputs.account_password }}
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_accounts_svc_plus.yml \
             -e "accounts_service_hosts=${{ matrix.host }}"
@@ -441,13 +460,16 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
+          ACCOUNT_PG_PASSWORD: ${{ steps.pg_creds.outputs.account_password }}
           INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
+        # billing-service 复用 accounts.svc.plus 同一个 account_user/account 库,
+        # 不单独建账号, 减少一种凭据。
         run: |
+          db_url="postgres://account_user:${ACCOUNT_PG_PASSWORD}@stunnel-client:15432/account?sslmode=disable"
           jq -n \
             --arg artifact "${{ github.workspace }}/billing-service/dist/billing-service-linux-amd64" \
             --arg image_ref "ghcr.io/ai-workspace-services/billing-service:${{ github.sha }}" \
-            --arg db_url "$BILLING_DATABASE_URL" \
+            --arg db_url "$db_url" \
             --arg token "$INTERNAL_SERVICE_TOKEN" \
             --arg hosts "${{ matrix.host }}" \
             '{billing_service_hosts: $hosts, billing_service_binary_artifact: $artifact, billing_service_image_ref: $image_ref, billing_service_database_url: $db_url, billing_service_internal_service_token: $token}' \
@@ -460,8 +482,8 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-          GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_TOKEN }}
         run: |
           jq -n \
             --arg hosts "${{ matrix.host }}" \
@@ -472,6 +494,27 @@ jobs:
             > /tmp/console-vars.json
           ansible-playbook -i ../cmdb/inventory.ini deploy_console_svc_plus.yml \
             -e @/tmp/console-vars.json
+
+      # 用 `vault kv patch` 而不是直接 POST /v1/kv/data/CICD: KV v2 的 data 接口
+      # 是整体覆盖语义, 直接 PUT 会把 kv/data/CICD 下其它流水线在用的 key (比如
+      # GHCR_TOKEN、VULTR_API_KEY) 全部冲掉。patch 是官方 CLI 提供的读-改-写,
+      # 只动这两个 key。
+      # 需要 Vault 里 github-actions-site-migration-toolkit 这个 role 的 policy
+      # 对 kv/data/CICD 和 kv/metadata/CICD 有 patch (或 create+update) 权限,
+      # 否则这一步会报 403, 不会静默失败, 但也不会中断已经跑完的部署。
+      - name: Persist Postgres credentials to Vault
+        if: ${{ success() }}
+        env:
+          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+          ROOT_PASSWORD: ${{ steps.pg_creds.outputs.root_password }}
+          ACCOUNT_PASSWORD: ${{ steps.pg_creds.outputs.account_password }}
+        run: |
+          curl -sSL "https://releases.hashicorp.com/vault/1.19.0/vault_1.19.0_linux_amd64.zip" -o /tmp/vault.zip
+          unzip -q -o /tmp/vault.zip vault -d /tmp
+          export VAULT_ADDR="${{ env.VAULT_ADDR }}"
+          /tmp/vault kv patch kv/CICD \
+            WEB_SAAS_POSTGRES_ROOT_PASSWORD="$ROOT_PASSWORD" \
+            WEB_SAAS_ACCOUNT_DB_PASSWORD="$ACCOUNT_PASSWORD"
 
   # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
