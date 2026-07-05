@@ -36,3 +36,28 @@ rsync -avz --delete /opt/modern-it-history/current/ backup-server:/opt/modern-it
 1. **静态数据还原**: 同步并恢复前端资源和挂载的静态卷。
 2. **代理环境还原**: 在目标服务器配置相关的网络套接字（如 `/dev/shm/xray.sock`）。
 3. **前端/网关重启**: 在 DNS 切换之前，确保对应的 Web 服务、Console 以及反代网关正确加载。DNS 切至新机器后，Caddy 会自动重新执行 HTTP 质询获取证书或加载迁移过的证书。
+
+## 4. CI 部署前置 (`deploy_web_saas` job / Vault Secrets)
+
+`.github/workflows/deploy-env-migration.yaml` 里 `target_domains=web-saas`(或 `all`)
+触发的 `deploy_web_saas` job，实际部署 postgresql.svc.plus / stunnel-client /
+accounts.svc.plus / billing-service / console.svc.plus 这 5 个服务到同一台
+provision 出来的主机上。
+
+所有 web-saas 专属密钥集中放在 **`kv/data/WEB_SAAS`**（人工维护，workflow 只读不写）：
+
+| Key (`kv/data/WEB_SAAS`) | 说明 |
+|---|---|
+| `POSTGRES_ROOT_PASSWORD` | Postgres 容器的 root (`postgres`) 密码，首次 `initdb` 时写入；换密码要先手动改容器里的密码，再同步改这里，否则下次重跑对不上。 |
+| `ACCOUNT_DB_PASSWORD` | `account` 库 `account_user` 账号的密码，由 `create_databases_and_users.yml` 建号时使用，也是 `accounts.svc.plus` 连库用的密码。 |
+| `BILLING_DATABASE_URL` | billing-service 的完整 Postgres 连接串（`postgres://user:pass@stunnel-client:15432/db?sslmode=disable`），可以复用 `account_user`/`account`，也可以单独建一个账号。 |
+| `INTERNAL_SERVICE_TOKEN` | billing-service 内部服务间鉴权 token。 |
+| `GHCR_USERNAME` | 拉取 `ghcr.io/ai-workspace-services/console` 镜像用的 GHCR 用户名。 |
+| `GHCR_PASSWORD` | 对应的 GHCR token/密码。 |
+
+这 6 个 key 都需要提前在 Vault 里手动填好真实值；缺哪个，对应 ansible 任务会在
+assert/连接阶段明确报错，不会静默用空值跑下去。
+
+**唯一需要额外确认的权限前置**：Vault 里 `github-actions-site-migration-toolkit`
+这个角色的 policy 要能 `read` `kv/data/WEB_SAAS`（以及 `kv/data/CICD` 里的
+`SSH_PRIVATE_DEPLOY_KEY_B64`，用于 SSH 到新主机）。
