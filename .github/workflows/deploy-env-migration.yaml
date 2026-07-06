@@ -382,6 +382,21 @@ jobs:
               - roles/vhosts/caddy
               - roles/host/stunnel-certs
             tasks:
+              # 早期 run 渲染的 fragment 用 {$SERVED_DOMAINS} 环境变量占位符做
+              # 站点键, systemd 下展开为空键, 会让后续所有服务的 caddy validate
+              # 失败; 各服务角色的清理只清自己且跑得太晚, 在这里统一清掉
+              - name: Remove stale Caddy fragments keyed on env placeholders
+                ansible.builtin.shell: |
+                  set -euo pipefail
+                  stale="$(grep -l '{\$SERVED_DOMAINS}' /etc/caddy/conf.d/*.caddy 2>/dev/null || true)"
+                  if [ -n "${stale}" ]; then
+                    rm -f ${stale}
+                    echo "removed: ${stale}"
+                  fi
+                args:
+                  executable: /bin/bash
+                register: stale_caddy_fragments
+                changed_when: stale_caddy_fragments.stdout | trim != ""
               - name: Check for cn-toolkit-shared Docker network
                 ansible.builtin.command: docker network inspect cn-toolkit-shared
                 register: shared_network_inspect
@@ -472,6 +487,35 @@ jobs:
           ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
             --limit "${{ matrix.host }}"
 
+      - name: Checkout accounts.svc.plus
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts.svc.plus
+          ref: main
+          path: accounts-svc-plus
+
+      # deploy-only 模式不做数据迁移, 全新 account 库没有任何表, accounts
+      # 服务启动即 "relation users does not exist" 崩溃循环。schema.sql 是
+      # drop+recreate 的基线, 只允许在 users 表不存在时初始化一次, 绝不能
+      # 在已有数据的库上重跑。
+      - name: Initialize account schema when absent
+        env:
+          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_DB_PASSWORD }}
+        run: |
+          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
+          user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
+          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
+          pg="docker exec -i -e PGPASSWORD='$ACCOUNT_PG_PASSWORD' postgresql psql -h 127.0.0.1 -U account_user -d account"
+          has_users="$(ssh "${ssh_opts[@]}" "${user}@${ip}" \
+            "$pg -tAc \"SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'\"")"
+          if [ "${has_users}" = "1" ]; then
+            echo "account schema already present; skipping baseline init"
+          else
+            ssh "${ssh_opts[@]}" "${user}@${ip}" "$pg -v ON_ERROR_STOP=1 -f -" \
+              < accounts-svc-plus/sql/schema.sql
+            echo "account baseline schema applied"
+          fi
+
       - name: Deploy accounts.svc.plus
         working-directory: playbooks
         env:
@@ -484,8 +528,16 @@ jobs:
           GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
           GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
         run: |
+          # 角色默认的 Caddy 站点写死 accounts.svc.plus / svc.plus, 迁移环境
+          # 必须按目标域参数化, 否则 fragment 服务的是源站域名
+          jq -n \
+            --arg site "accounts.${{ github.event.inputs.target_domain_base }}" \
+            --arg fwd "${{ github.event.inputs.target_domain_base }}" \
+            '{accounts_service_caddy_sites: [{server_names: [$site], default_forwarded_host: $fwd, upstream: "127.0.0.1:18081"}]}' \
+            > /tmp/accounts-caddy-vars.json
           ansible-playbook -i ../cmdb/inventory.ini deploy_accounts_svc_plus.yml \
-            -e "accounts_service_hosts=${{ matrix.host }}"
+            -e "accounts_service_hosts=${{ matrix.host }}" \
+            -e @/tmp/accounts-caddy-vars.json
 
       - name: Deploy billing-service
         working-directory: playbooks
@@ -519,7 +571,8 @@ jobs:
             --arg image "ghcr.io/ai-workspace-services/console:latest" \
             --arg user "$GHCR_USERNAME" \
             --arg pass "$GHCR_PASSWORD" \
-            '{console_service_target_host: $hosts, console_service_frontend_image: $image, console_service_registry_username: $user, console_service_registry_password: $pass}' \
+            --arg domain "console.${{ github.event.inputs.target_domain_base }}" \
+            '{console_service_target_host: $hosts, console_service_frontend_image: $image, console_service_registry_username: $user, console_service_registry_password: $pass, CANONICAL_DOMAIN: $domain, SERVED_DOMAINS: $domain}' \
             > /tmp/console-vars.json
           ansible-playbook -i ../cmdb/inventory.ini deploy_console_svc_plus.yml \
             -e @/tmp/console-vars.json
