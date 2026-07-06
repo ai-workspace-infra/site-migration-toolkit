@@ -487,6 +487,35 @@ jobs:
           ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
             --limit "${{ matrix.host }}"
 
+      - name: Checkout accounts.svc.plus
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-services/accounts.svc.plus
+          ref: main
+          path: accounts-svc-plus
+
+      # deploy-only 模式不做数据迁移, 全新 account 库没有任何表, accounts
+      # 服务启动即 "relation users does not exist" 崩溃循环。schema.sql 是
+      # drop+recreate 的基线, 只允许在 users 表不存在时初始化一次, 绝不能
+      # 在已有数据的库上重跑。
+      - name: Initialize account schema when absent
+        env:
+          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_DB_PASSWORD }}
+        run: |
+          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
+          user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
+          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
+          pg="docker exec -i -e PGPASSWORD='$ACCOUNT_PG_PASSWORD' postgresql psql -h 127.0.0.1 -U account_user -d account"
+          has_users="$(ssh "${ssh_opts[@]}" "${user}@${ip}" \
+            "$pg -tAc \"SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'\"")"
+          if [ "${has_users}" = "1" ]; then
+            echo "account schema already present; skipping baseline init"
+          else
+            ssh "${ssh_opts[@]}" "${user}@${ip}" "$pg -v ON_ERROR_STOP=1 -f -" \
+              < accounts-svc-plus/sql/schema.sql
+            echo "account baseline schema applied"
+          fi
+
       - name: Deploy accounts.svc.plus
         working-directory: playbooks
         env:
