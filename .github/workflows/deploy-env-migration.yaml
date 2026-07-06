@@ -76,6 +76,14 @@ on:
         required: true
         default: "uat"
         type: string
+      vault_addr:
+        description: "Vault 服务地址 (可选，覆盖默认的 https://vault.svc.plus)"
+        required: false
+        type: string
+      vault_token:
+        description: "Vault 管理员 Token (可选，仅在需要跳过 JWT 登录或 JWT 异常时作为兜底使用)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -86,7 +94,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VAULT_ADDR: https://vault.svc.plus
+  VAULT_ADDR: ${{ github.event.inputs.vault_addr || 'https://vault.svc.plus' }}
   VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path }}
   VAULT_ROLE: github-actions-site-migration-toolkit
   VAULT_KV: kv/data/CICD
@@ -116,7 +124,8 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
-          method: jwt
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
@@ -216,13 +225,68 @@ jobs:
             ${{ env.ENV_DIR }}/inventory.ini
 
   # ---------------------------------------------------------------------------
+  # 步骤 1.5: 初始化新环境 Vault 凭证 (Initialize Vault Secrets)
+  # ---------------------------------------------------------------------------
+  initialize_vault_secrets:
+    name: Initialize Vault Secrets
+    needs: provision
+    if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Vault
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          exportToken: true
+
+      - name: Initialize Databases Credentials
+        run: |
+          URL="${VAULT_ADDR}/v1/kv/data/${{ github.event.inputs.vault_env_path }}/databases"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Vault-Token: $VAULT_TOKEN" "$URL")
+          if [ "$STATUS" = "404" ]; then
+            echo "Initializing databases credentials..."
+            PAYLOAD=$(jq -n \
+              --arg postgres_root_password "$(openssl rand -base64 16)" \
+              --arg account_pg_password "$(openssl rand -base64 16)" \
+              --arg litellm_pg_password "$(openssl rand -base64 16)" \
+              --arg rag_pg_password "$(openssl rand -base64 16)" \
+              --arg zitadel_pg_password "$(openssl rand -base64 16)" \
+              --arg gitea_pg_password "$(openssl rand -base64 16)" \
+              --arg vault_pg_password "$(openssl rand -base64 16)" \
+              --arg billing_pg_password "$(openssl rand -base64 16)" \
+              '{data: {postgres_root_password: $postgres_root_password, account_pg_password: $account_pg_password, litellm_pg_password: $litellm_pg_password, rag_pg_password: $rag_pg_password, zitadel_pg_password: $zitadel_pg_password, gitea_pg_password: $gitea_pg_password, vault_pg_password: $vault_pg_password, billing_pg_password: $billing_pg_password}}')
+            curl -sS -X POST -H "X-Vault-Token: $VAULT_TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL"
+          else
+            echo "Credentials already exist (Status: $STATUS). Skipping."
+          fi
+
+      - name: Initialize Agent Proxy Credentials
+        run: |
+          URL="${VAULT_ADDR}/v1/kv/data/${{ github.event.inputs.vault_env_path }}/agent-proxy"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Vault-Token: $VAULT_TOKEN" "$URL")
+          if [ "$STATUS" = "404" ]; then
+            echo "Initializing agent proxy credentials..."
+            PAYLOAD=$(jq -n \
+              --arg xray_uuid "$(uuidgen)" \
+              '{data: {xray_uuid: $xray_uuid}}')
+            curl -sS -X POST -H "X-Vault-Token: $VAULT_TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL"
+          else
+            echo "Credentials already exist (Status: $STATUS). Skipping."
+          fi
+
+  # ---------------------------------------------------------------------------
   # 步骤 2: 基础环境安装 (Bootstrap Deploy)
   # ---------------------------------------------------------------------------
   deploy_base:
     name: Deploy Base Services on ${{ matrix.host }}
     # 只负责 ai-workspace 域 (litellm/qmd/x-memory-hub/postgres/gateway-openclaw 等),
     # 不要对 web-saas / infra-platform 域跑这个全家桶安装器。
-    needs: provision
+    needs: [provision, initialize_vault_secrets]
     if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","ai-workspace"]'), github.event.inputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -254,7 +318,8 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
-          method: jwt
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
@@ -311,7 +376,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy_web_saas:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
-    needs: provision
+    needs: [provision, initialize_vault_secrets]
     if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","web-saas"]'), github.event.inputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -351,7 +416,8 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
-          method: jwt
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
@@ -647,7 +713,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy_infra_platform:
     name: Deploy Open Platform Services on ${{ matrix.host }}
-    needs: provision
+    needs: [provision, initialize_vault_secrets]
     if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","infra-platform"]'), github.event.inputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -680,7 +746,8 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
-          method: jwt
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
@@ -855,7 +922,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy_agent_proxy:
     name: Deploy Agent Proxy Services on ${{ matrix.host }}
-    needs: provision
+    needs: [provision, initialize_vault_secrets]
     if: ${{ github.event.inputs.run_provision_and_deploy == 'true' && github.event.inputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","agent-proxy"]'), github.event.inputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -888,7 +955,8 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
-          method: jwt
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
@@ -1044,7 +1112,8 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
-          method: jwt
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
@@ -1104,7 +1173,8 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
-          method: jwt
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
