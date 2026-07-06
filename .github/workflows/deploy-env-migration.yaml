@@ -364,19 +364,22 @@ jobs:
           go build -buildvcs=false -o dist/billing-service-linux-amd64 ./cmd/billing-service
           chmod 0755 dist/billing-service-linux-amd64
 
-      - name: Bootstrap Docker + shared network + stunnel certs
+      - name: Bootstrap Docker + Caddy + shared network + stunnel certs
         working-directory: playbooks
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         run: |
           cat > /tmp/web-saas-bootstrap.yml <<'EOF'
-          - name: Ensure Docker engine, shared network, and stunnel certs exist
+          - name: Ensure Docker engine, Caddy, shared network, and stunnel certs exist
             hosts: "{{ target_host }}"
             become: true
             gather_facts: true
             roles:
               - roles/vhosts/docker
+              # accounts/console 角色只往 conf.d 写 fragment 并 reload caddy
+              # 服务, 它们假设 Caddy 本体已经安装; 全新主机需要在这里装好
+              - roles/vhosts/caddy
               - roles/host/stunnel-certs
             tasks:
               - name: Check for cn-toolkit-shared Docker network
