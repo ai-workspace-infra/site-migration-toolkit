@@ -9,7 +9,7 @@ help:
 	@echo "  make backup  DOMAIN=domain1,domain2 - Execute cold backup on the target host"
 	@echo "  make restore DOMAIN=domain1,domain2 - Execute offline restore on the target host"
 	@echo ""
-	@echo "  Supported Domains: ai-workspace, web-saas, infra-platform"
+	@echo "  Supported Domains: ai-workspace, web-saas, infra-platform, agent-proxy"
 
 migrate:
 	@python3 scripts/run_toolkit.py migrate --domain $(DOMAIN) $(RUN_ARGS)
