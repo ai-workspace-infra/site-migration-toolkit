@@ -606,6 +606,27 @@ jobs:
           ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
             --limit "${{ matrix.host }}"
 
+      # create_databases_and_users.yml 按 Env > Vault > 自动生成 解析
+      # account_user 的密码, 并把最终结果写回
+      # kv/data/{vault_env_path}/databases; 上面 "Load Vault secrets" 读的是
+      # provisioning *之前* 的值 (首次部署时该 key 还不存在), accounts_service
+      # 角色渲染 app.env 里的 DB_PASSWORD 只認 ACCOUNT_PG_PASSWORD 这个环境变量,
+      # 不会自己去 Vault 取, 所以必须在建库之后重新读一次, 否则 accounts 容器
+      # 拿着空密码连库, 报 "password authentication failed"。
+      - name: Read resolved account DB password from Vault
+        if: ${{ steps.group_check.outputs.in_group == 'true' }}
+        id: account_secret
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+          token: ${{ github.event.inputs.vault_token }}
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            ${{ env.VAULT_KV_DATABASES }} account_pg_password | ACCOUNT_PG_PASSWORD
+
       - name: Checkout accounts.svc.plus
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
         uses: actions/checkout@v7
@@ -647,6 +668,7 @@ jobs:
           # GHCR_USERNAME/GHCR_PASSWORD 在目标主机上 docker login 后再 pull
           GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
           GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+          ACCOUNT_PG_PASSWORD: ${{ steps.account_secret.outputs.ACCOUNT_PG_PASSWORD }}
         run: |
           # 角色默认的 Caddy 站点写死 accounts.svc.plus / svc.plus, 迁移环境
           # 必须按目标域参数化, 否则 fragment 服务的是源站域名
