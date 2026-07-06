@@ -513,16 +513,6 @@ jobs:
           ansible-playbook -i ../cmdb/inventory.ini deploy_stunnel-client.yml \
             -e "stunnel_client_hosts=${{ matrix.host }}"
 
-      - name: Provision account database and role
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
-            --limit "${{ matrix.host }}"
 
       - name: Checkout accounts.svc.plus
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -538,12 +528,11 @@ jobs:
       # 在已有数据的库上重跑。
       - name: Initialize account schema when absent
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        env:
         run: |
           ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
           user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
           ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
-          pg="docker exec -i -e PGPASSWORD='$ACCOUNT_PG_PASSWORD' postgresql psql -h 127.0.0.1 -U account_user -d account"
+          pg="docker exec -i postgresql psql -U postgres -d account"
           has_users="$(ssh "${ssh_opts[@]}" "${user}@${ip}" \
             "$pg -tAc \"SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'\"")"
           if [ "${has_users}" = "1" ]; then
@@ -972,7 +961,7 @@ jobs:
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
           INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
         run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_agent_svc_plus.yml \
+          ansible-playbook -i ../cmdb/inventory.ini deploy_xray_proxy_server.yml \
             -e "agent_service_hosts=${{ matrix.host }}" \
             -e "agent_controller_url=https://accounts.${{ github.event.inputs.target_domain_base }}" \
             -e "agent_id=${{ matrix.host }}" \
