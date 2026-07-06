@@ -967,6 +967,7 @@ jobs:
             -e "agent_controller_url=https://accounts.${{ github.event.inputs.target_domain_base }}" \
             -e "agent_id=${{ matrix.host }}" \
             -e "xray_uuid=${XRAY_UUID}" \
+            -e "agent_svc_plus_manage_source_checkout=true" \
             -e "agent_svc_plus_build_on_target=true"
 
       - name: Deploy xray-exporter
