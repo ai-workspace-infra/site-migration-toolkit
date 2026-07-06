@@ -718,6 +718,7 @@ jobs:
             roles:
               - roles/vhosts/docker
               - roles/vhosts/caddy
+              - roles/vhosts/stunnel
             tasks:
               - name: Check for cn-toolkit-shared Docker network
                 ansible.builtin.command: docker network inspect cn-toolkit-shared
@@ -965,7 +966,8 @@ jobs:
             -e "agent_service_hosts=${{ matrix.host }}" \
             -e "agent_controller_url=https://accounts.${{ github.event.inputs.target_domain_base }}" \
             -e "agent_id=${{ matrix.host }}" \
-            -e "xray_uuid=${XRAY_UUID}"
+            -e "xray_uuid=${XRAY_UUID}" \
+            -e "agent_svc_plus_build_on_target=true"
 
       - name: Deploy xray-exporter
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
