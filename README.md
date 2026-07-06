@@ -16,6 +16,8 @@
    - 涵盖 Web Console、Accounts、Billing 计费及底层的 Xray 隧道代理入口。
 3. **[domain-open-platform](domains/open-platform/README.md)** (开放平台与基础设施域)
    - 涵盖 Gitea、Vault、IAM (Zitadel) 以及强大的全局可观测性底座 (Observability Stack - Grafana, VictoriaMetrics 等)。
+4. **[domain-agent-proxy](domains/agent-proxy/README.md)** (加速代理与网关域)
+   - 涵盖 Caddy、Xray 隧道、Xray Exporters、Vector 观测代理和 agent-svc-plus 控制面同步节点。
 
 详细的各个域的迁移、备份、与恢复策略，请查阅各个子域内的 `README.md` 文档。
 
