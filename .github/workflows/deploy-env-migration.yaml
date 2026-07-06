@@ -132,7 +132,7 @@ jobs:
           repository: ai-workspace-infra/iac_modules
           ref: ${{ github.event.inputs.infra_ref }}
           path: infra/iac_modules
-          
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
@@ -718,7 +718,7 @@ jobs:
             roles:
               - roles/vhosts/docker
               - roles/vhosts/caddy
-              - roles/vhosts/stunnel
+              - roles/host/stunnel-certs
             tasks:
               - name: Check for cn-toolkit-shared Docker network
                 ansible.builtin.command: docker network inspect cn-toolkit-shared
@@ -1009,7 +1009,7 @@ jobs:
         with:
           name: site-migration-toolkit-cmdb
           path: cmdb
-          
+
       - name: Checkout site-migration-toolkit
         uses: actions/checkout@v7
         with:
@@ -1074,7 +1074,7 @@ jobs:
         with:
           name: site-migration-toolkit-cmdb
           path: cmdb
-          
+
       - name: Checkout playbooks
         uses: actions/checkout@v7
         with:
