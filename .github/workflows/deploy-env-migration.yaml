@@ -427,6 +427,7 @@ jobs:
             ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
             ${{ env.VAULT_KV_WEB_SAAS }} GHCR_USERNAME | GHCR_USERNAME ;
             ${{ env.VAULT_KV_WEB_SAAS }} GHCR_PASSWORD | GHCR_PASSWORD ;
+            ${{ env.VAULT_KV_WEB_SAAS }} ACCOUNT_DB_PASSWORD | ACCOUNT_PG_PASSWORD ;
             ${{ env.VAULT_KV_DATABASES }} postgres_root_password | POSTGRES_ROOT_PASSWORD
 
       - name: Configure SSH Key
@@ -595,13 +596,21 @@ jobs:
       # deploy_infra_platform job 里, 导致 web-saas 独立部署时 account 库
       # 一直不存在, "Initialize account schema when absent" 直接
       # "database account does not exist"。
+      # create_databases_and_users.yml 的密码解析优先级是 Env > Vault > 自动生成,
+      # 而 Vault 侧的读取/写回都要求 create_databases_and_users.yml 内部拿到一个
+      # 可用的 vault_token 才会执行 (它自己再单独认证一次 Vault, 与本 job 的
+      # "Load Vault secrets" 是两条独立通路) —— 目前这条通路没有打通, 与其
+      # 依赖它, 不如直接把 ACCOUNT_DB_PASSWORD 这个已经在用的固定 Vault 密钥
+      # (kv/data/WEB_SAAS, 上面 "Load Vault secrets" 已经安全取出) 作为 Env
+      # 层显式传入, 建库和 accounts 容器两边用同一个值, 完全不依赖 Vault
+      # 读写是否打通。
       - name: Provision account database and role
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
         working-directory: playbooks
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
         run: |
           ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
             --limit "${{ matrix.host }}"
@@ -647,6 +656,7 @@ jobs:
           # GHCR_USERNAME/GHCR_PASSWORD 在目标主机上 docker login 后再 pull
           GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
           GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
         run: |
           # 角色默认的 Caddy 站点写死 accounts.svc.plus / svc.plus, 迁移环境
           # 必须按目标域参数化, 否则 fragment 服务的是源站域名
