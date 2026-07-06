@@ -513,16 +513,6 @@ jobs:
           ansible-playbook -i ../cmdb/inventory.ini deploy_stunnel-client.yml \
             -e "stunnel_client_hosts=${{ matrix.host }}"
 
-      - name: Provision account database and role
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
-            --limit "${{ matrix.host }}"
 
       - name: Checkout accounts.svc.plus
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -971,7 +961,7 @@ jobs:
           ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
           INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
         run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_agent_svc_plus.yml \
+          ansible-playbook -i ../cmdb/inventory.ini deploy_xray_proxy_server.yml \
             -e "agent_service_hosts=${{ matrix.host }}" \
             -e "agent_controller_url=https://accounts.${{ github.event.inputs.target_domain_base }}" \
             -e "agent_id=${{ matrix.host }}" \
