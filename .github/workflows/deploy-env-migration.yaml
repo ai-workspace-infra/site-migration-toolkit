@@ -15,6 +15,17 @@ on:
         required: false
         default: "main"
         type: string
+      console_ref:
+        description: "xworkspace-console 仓库的 Git Ref (例如 main, v1.1.5, v1.1.4)"
+        required: false
+        default: "main"
+        type: string
+      offline_mode:
+        description: "on-host 离线包模式: off=在线拉最新(默认); auto=离线加速; force=强制离线"
+        required: false
+        default: "off"
+        type: choice
+        options: ["off", "auto", "force"]
       source_host:
         description: "源环境 IP 或域名 (用于导出数据)"
         required: true
@@ -298,7 +309,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: ai-workspace-lab/xworkspace-console
-          ref: main
+          ref: ${{ github.event.inputs.console_ref || 'main' }}
 
       - name: Download CMDB
         uses: actions/download-artifact@v8
@@ -350,6 +361,7 @@ jobs:
         run: |
           sed -i 's/OLLAMA_API_KEY:-}"/OLLAMA_API_KEY:-}"\n  printf '"'"'BRANCH=%q\\n'"'"' "${INFRA_REF:-main}"/' scripts/run-on-host-bootstrap.sh
           sed -i 's/export .* OLLAMA_API_KEY/& BRANCH/' scripts/run-on-host-bootstrap.sh
+          sed -i 's|/ai-workspace |/ai-workspace/${BRANCH:-main} |' scripts/run-on-host-bootstrap.sh
 
       - name: Run on-host bootstrap
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -357,7 +369,7 @@ jobs:
           MATRIX_HOST: ${{ matrix.host }}
           CMDB_PATH: cmdb/cmdb.json
           SSH_KEY_PATH: ~/.ssh/id_deploy
-          AI_WORKSPACE_OFFLINE_MODE: 'off'
+          AI_WORKSPACE_OFFLINE_MODE: ${{ github.event.inputs.offline_mode || 'off' }}
           AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
           INFRA_REF: ${{ github.event.inputs.infra_ref }}
         run: bash scripts/run-on-host-bootstrap.sh
@@ -1177,7 +1189,7 @@ jobs:
     if: |
       always() &&
       github.event.inputs.terraform_action == 'apply' &&
-      github.event.inputs.confirm_dns_switch == 'true' &&
+      (github.event.inputs.confirm_dns_switch == 'true' || github.event.inputs.confirm_dns_switch == true) &&
       (needs.provision.result == 'success' || needs.provision.result == 'skipped') &&
       (needs.initialize_vault_secrets.result == 'success' || needs.initialize_vault_secrets.result == 'skipped') &&
       (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') &&
