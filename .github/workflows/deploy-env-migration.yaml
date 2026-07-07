@@ -1185,12 +1185,28 @@ jobs:
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
-    needs: data_migration
-    if: ${{ always() && (needs.data_migration.result == 'success' || needs.data_migration.result == 'skipped') && github.event.inputs.terraform_action == 'apply' && (github.event.inputs.confirm_dns_switch == 'true' || github.event.inputs.confirm_dns_switch == true) }}
+    needs: [provision, initialize_vault_secrets, deploy_base, deploy_web_saas, deploy_infra_platform, deploy_agent_proxy, data_migration]
+    if: |
+      always() &&
+      github.event.inputs.terraform_action == 'apply' &&
+      (github.event.inputs.confirm_dns_switch == 'true' || github.event.inputs.confirm_dns_switch == true) &&
+      (needs.provision.result == 'success' || needs.provision.result == 'skipped') &&
+      (needs.initialize_vault_secrets.result == 'success' || needs.initialize_vault_secrets.result == 'skipped') &&
+      (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') &&
+      (needs.deploy_web_saas.result == 'success' || needs.deploy_web_saas.result == 'skipped') &&
+      (needs.deploy_infra_platform.result == 'success' || needs.deploy_infra_platform.result == 'skipped') &&
+      (needs.deploy_agent_proxy.result == 'success' || needs.deploy_agent_proxy.result == 'skipped') &&
+      (needs.data_migration.result == 'success' || needs.data_migration.result == 'skipped')
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Checkout site-migration-toolkit
+        uses: actions/checkout@v7
+        with:
+          path: site-migration-toolkit
+
       - name: Download CMDB
+        if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
         uses: actions/download-artifact@v8
         with:
           name: site-migration-toolkit-cmdb
@@ -1224,5 +1240,10 @@ jobs:
         env:
           CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
         run: |
+          if [ "${{ github.event.inputs.run_provision_and_deploy }}" = "true" ]; then
+            INVENTORY_PATH="../cmdb/inventory.ini"
+          else
+            INVENTORY_PATH="../site-migration-toolkit/inventory.ini"
+          fi
           cd playbooks
-          ansible-playbook -i ../cmdb/inventory.ini update_site_dns.yml -e "target_domain=${{ github.event.inputs.target_domain_base }}" -e "source_domain=${{ github.event.inputs.source_domain_base }}"
+          ansible-playbook -i "$INVENTORY_PATH" update_site_dns.yml -e "target_domain=${{ github.event.inputs.target_domain_base }}" -e "source_domain=${{ github.event.inputs.source_domain_base }}"
