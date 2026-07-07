@@ -44,14 +44,37 @@ echo "[INFO] 备份完成！"
 ```
 
 > [!TIP]
-> 建议将备份文件推送到异地 S3 (例如 MinIO) 或通过 `rclone` 同步到其他云存储，以防范机房级灾难。
+> 建议将备份文件加密并传输到异地 S3 兼容对象存储。我们已实现自动化脚本 `backup_postgres.sh`，支持对接 Vault 动态获取 S3 凭证并对数据进行高强度加密备份。
 
-### 2.2 配置定时任务 (Cron)
+### 2.2 自动加密备份并传输至 S3 (推荐)
 
-通过 `crontab -e` 添加每天凌晨 3 点自动备份：
-```cron
-0 3 * * * /bin/bash /opt/backup/pg_backup.sh >> /var/log/pg_backup.log 2>&1
+项目下新版备份脚本位于 [backup_postgres.sh](file:///Users/shenlan/workspaces/ai-workspace-infra/site-migration-toolkit/scripts/backup/backup_postgres.sh)。该脚本会执行以下流程：
+1. 运行 Python 辅助脚本，以 JWT 认证或 Token 方式登录 Vault (`https://vault.svc.plus`)。
+2. 从 Vault 秘密路径 `kv/CICD` 中动态拉取 S3 对象存储凭证（`TF_STATE_BUCKET`, `TF_STATE_ACCESS_KEY`, `TF_STATE_SECRET_KEY`, `TF_STATE_ENDPOINT`, `TF_STATE_REGION`）。
+3. 使用 `pg_dump` 对 `postgresql-svc-plus` 里的每一个数据库做逻辑备份。
+4. 使用 `openssl` 对导出的备份包执行高强度的对称加密（AES-256-CBC，PBKDF2 派生密钥）。
+5. 调用 `aws s3 cp` 命令将加密后的冷备文件上传到指定的 S3 桶。
+
+#### 2.2.1 本地部署方法
+
+1. 将脚本拷贝至宿主机 `/opt/backup/backup_postgres.sh`，并确保拥有执行权限。
+2. 在宿主机创建凭证配置文件 `/opt/backup/.backup_env`（权限设为 `chmod 600`）：
+```bash
+# 高强度对称加密口令（务必离线备份）
+export BACKUP_ENCRYPTION_PASS="YourSuperSecurePassphrase"
+
+# Vault 连接信息与鉴权
+export VAULT_ADDR="https://vault.svc.plus"
+export VAULT_TOKEN="your_vault_token" # 或者是 JWT 方式对应的环境变量 VAULT_JWT 和 VAULT_ROLE
 ```
+
+#### 2.2.2 配置定时任务 (Cron)
+
+通过 `crontab -e` 配置每天凌晨 3 点自动运行 S3 加密备份：
+```cron
+0 3 * * * /bin/bash -c "source /opt/backup/.backup_env && /bin/bash /opt/backup/backup_postgres.sh" >> /var/log/pg_backup_s3.log 2>&1
+```
+
 
 ## 3. 灾难恢复与还原 (Restore)
 

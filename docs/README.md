@@ -32,4 +32,5 @@
 - [系统级实时概览 (Systems Overview)](ZH/Systems-Overview/PROD/live_systems_overview.md)
 - [备份与容灾预案 (Backup & DR Plan)](ZH/BackUP/backup_dr_plan.md)
 - [PostgreSQL 容灾实战 (PostgreSQL DR)](ZH/BackUP/postgresql_disaster_recovery.md)
+- [Vault OIDC 策略与 403 排障 (Vault OIDC DR & Troubleshooting)](ZH/BackUP/vault_oidc_policy_troubleshooting.md)
 - [迁移实施方案历史文档 (Site Migration Implementation)](ZH/BackUP/Site-Migration/implementation_plan.md)

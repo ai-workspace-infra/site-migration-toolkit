@@ -79,14 +79,26 @@ path "kv/data/WEB_SAAS" {
 path "kv/metadata/WEB_SAAS" {
   capabilities = ["read", "list"]
 }
+# 动态环境数据库凭证权限
+path "kv/data/+/databases" {
+  capabilities = ["read", "create", "update", "patch"]
+}
+path "kv/metadata/+/databases" {
+  capabilities = ["read", "list"]
+}
+# 动态环境 Agent Proxy 隧道 UUID 读写权限
+path "kv/data/+/agent-proxy" {
+  capabilities = ["read", "create", "update", "patch"]
+}
+path "kv/metadata/+/agent-proxy" {
+  capabilities = ["read", "list"]
+}
 EOF
 ```
 
-> 后续新增业务域的专属密钥时，沿用同一模式：新开 `kv/data/<DOMAIN>` 路径存放该域
-> 的 key，然后在这个 policy 里追加对应的 `data` + `metadata` 两段 path。
-> 不要把业务域密钥混进共享的 `kv/data/CICD`，也不要借用其他仓库的 policy
-> （历史上本 role 曾借用 `github-actions-xworkspace-console` 的 policy，导致新增
-> `kv/data/WEB_SAAS` 后流水线 403，见 web-saas README §4 的实测记录）。
+> 💡 **排障提示**：若流水线在加载 Vault 敏感数据时（如加载数据库密码或 agent-proxy xray_uuid）报错 `403 (Forbidden)`，请参阅专用的 [Vault OIDC 策略配置与 403 权限排障指南](docs/ZH/BackUP/vault_oidc_policy_troubleshooting.md) 更新您的 Vault Policy。
+>
+> 后续新增业务域的专属密钥时，沿用同一模式：新开 `kv/data/<DOMAIN>` 路径存放该域的 key，然后在这个 policy 里追加对应的 `data` + `metadata` 两段 path。不要把业务域密钥混进共享的 `kv/data/CICD`，也不要借用其他仓库的 policy。
 
 #### 2. Role：只信任本仓库的 OIDC 身份
 
