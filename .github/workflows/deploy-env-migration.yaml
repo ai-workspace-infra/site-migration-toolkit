@@ -66,13 +66,14 @@ on:
           - infra-platform
           - agent-proxy
       instance_plan:
-        description: "选择 VPS 规格 (全域建议 4C8G，单域支持 2C4G 矩阵)"
+        description: "选择 VPS 规格 (全域建议 4C8G，单域支持 2C4G 矩阵，agent-proxy 默认 1C2G)"
         required: true
         default: "4C8G"
         type: choice
         options:
           - 4C8G
           - 2C4G
+          - 1C2G
       toolkit_action:
         description: "Toolkit 执行动作 (deploy = 仅在新环境部署全部服务，不执行数据迁移)"
         required: false
@@ -260,7 +261,17 @@ jobs:
       - name: Map Instance Plan
         id: plan
         run: |
-          if [ "${{ github.event.inputs.instance_plan || '4C8G' }}" == "2C4G" ]; then
+          PLAN="${{ github.event.inputs.instance_plan || '4C8G' }}"
+          DOMAIN="${{ github.event.inputs.domain || 'all' }}"
+          
+          # agent-proxy 默认使用 1C2G
+          if [ "$DOMAIN" == "agent-proxy" ] && [ "$PLAN" == "4C8G" ]; then
+            PLAN="1C2G"
+          fi
+
+          if [ "$PLAN" == "1C2G" ]; then
+            echo "api=vc2-1c-2gb" >> "$GITHUB_OUTPUT"
+          elif [ "$PLAN" == "2C4G" ]; then
             echo "api=vc2-2c-4gb" >> "$GITHUB_OUTPUT"
           else
             echo "api=vc2-4c-8gb" >> "$GITHUB_OUTPUT"
