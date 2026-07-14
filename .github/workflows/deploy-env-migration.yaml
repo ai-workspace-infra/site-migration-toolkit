@@ -134,8 +134,8 @@ env:
   PLAYBOOKS_DIR: infra/playbooks
 
 jobs:
-  resolve_deployment_profile:
-    name: Resolve deployment profile
+  provision:
+    name: Resolve Profile, Provision Environment & Init Secrets
     runs-on: ubuntu-latest
     outputs:
       deployment_env: ${{ steps.route.outputs.deployment_env }}
@@ -154,6 +154,8 @@ jobs:
       target_domain_base: ${{ steps.route.outputs.target_domain_base }}
       confirm_dns_switch: ${{ steps.route.outputs.confirm_dns_switch }}
       vault_env_path: ${{ steps.route.outputs.vault_env_path }}
+      hosts: ${{ steps.matrix.outputs.hosts }}
+      count: ${{ steps.matrix.outputs.count }}
     steps:
       - name: Route ref to an explicit profile
         id: route
@@ -201,28 +203,8 @@ jobs:
           done
           echo "vault_env_path=${deployment_env}" >> "$GITHUB_OUTPUT"
 
-  # ---------------------------------------------------------------------------
-  # 步骤 1: 基础设施配置与启动 (Provision)
-  # ---------------------------------------------------------------------------
-  provision:
-    name: Provision New Environment (Terraform)
-    needs: resolve_deployment_profile
-    if: ${{ needs.resolve_deployment_profile.outputs.run_provision_and_deploy == 'true' }}
-    runs-on: ubuntu-latest
-    outputs:
-      hosts: ${{ steps.matrix.outputs.hosts }}
-      count: ${{ steps.matrix.outputs.count }}
-      deployment_env: ${{ needs.resolve_deployment_profile.outputs.deployment_env }}
-      target_domains: ${{ needs.resolve_deployment_profile.outputs.target_domains }}
-      terraform_action: ${{ needs.resolve_deployment_profile.outputs.terraform_action }}
-      toolkit_action: ${{ needs.resolve_deployment_profile.outputs.toolkit_action }}
-      infra_ref: ${{ needs.resolve_deployment_profile.outputs.infra_ref }}
-      console_ref: ${{ needs.resolve_deployment_profile.outputs.console_ref }}
-      offline_mode: ${{ needs.resolve_deployment_profile.outputs.offline_mode }}
-      target_domain_base: ${{ needs.resolve_deployment_profile.outputs.target_domain_base }}
-      run_provision_and_deploy: ${{ needs.resolve_deployment_profile.outputs.run_provision_and_deploy }}
-    steps:
       - name: Load Vault secrets
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         id: vault
         uses: hashicorp/vault-action@v4
         with:
@@ -232,6 +214,7 @@ jobs:
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           ignoreNotFound: true
+          exportToken: true
           secrets: |
             ${{ env.VAULT_KV }} VULTR_API_KEY | VULTR_API_KEY ;
             ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
@@ -241,24 +224,29 @@ jobs:
             ${{ env.VAULT_KV }} TF_STATE_REGION | TF_STATE_REGION
 
       - name: Checkout iac_modules
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         uses: actions/checkout@v7
         with:
           repository: ai-workspace-infra/iac_modules
-          ref: ${{ needs.resolve_deployment_profile.outputs.infra_ref }}
+          ref: ${{ steps.route.outputs.infra_ref }}
           path: infra/iac_modules
 
       - uses: hashicorp/setup-terraform@v3
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         with:
           terraform_version: "1.9.8"
 
       - uses: actions/setup-python@v6
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         with:
           python-version: "3.12"
 
       - name: Install render deps
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         run: pip install --quiet pyyaml jinja2
 
       - name: Map Instance Plan
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         id: plan
         run: |
           PLAN="${{ github.event.inputs.instance_plan || '4C8G' }}"
@@ -278,16 +266,18 @@ jobs:
           fi
 
       - name: generate.py render
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         working-directory: ${{ env.VPS_ROOT }}
         env:
-          TARGET_DOMAIN: ${{ needs.resolve_deployment_profile.outputs.target_domains }}
+          TARGET_DOMAIN: ${{ steps.route.outputs.target_domains }}
           INSTANCE_PLAN_API: ${{ steps.plan.outputs.api }}
           TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
           TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
           TF_WORKSPACE_PREFIX: env
-        run: python3 scripts/generate.py render --resources config/resources/${{ needs.resolve_deployment_profile.outputs.resource_file }}.yaml --workdir envs/site-migration-toolkit
+        run: python3 scripts/generate.py render --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/site-migration-toolkit
 
       - name: Terraform init
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         working-directory: ${{ env.ENV_DIR }}
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
@@ -298,30 +288,30 @@ jobs:
         run: |
           terraform init -input=false \
             -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=${{ needs.resolve_deployment_profile.outputs.state_key }}"
+            -backend-config="key=${{ steps.route.outputs.state_key }}"
 
       - name: Terraform Apply / Destroy
+        if: steps.route.outputs.run_provision_and_deploy == 'true'
         working-directory: ${{ env.ENV_DIR }}
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
           TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
         run: |
-          terraform workspace select ${{ needs.resolve_deployment_profile.outputs.terraform_workspace }} || terraform workspace new ${{ needs.resolve_deployment_profile.outputs.terraform_workspace }}
-          terraform ${{ needs.resolve_deployment_profile.outputs.terraform_action }} -auto-approve -input=false
+          terraform workspace select ${{ steps.route.outputs.terraform_workspace }} || terraform workspace new ${{ steps.route.outputs.terraform_workspace }}
+          terraform ${{ steps.route.outputs.terraform_action }} -auto-approve -input=false
 
       - name: generate.py inventory
-        if: ${{ needs.resolve_deployment_profile.outputs.terraform_action == 'apply' }}
+        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
         working-directory: ${{ env.VPS_ROOT }}
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-        # 同样指定 envs/site-migration-toolkit
-        run: python3 scripts/generate.py inventory --resources config/resources/${{ needs.resolve_deployment_profile.outputs.resource_file }}.yaml --workdir envs/site-migration-toolkit
+        run: python3 scripts/generate.py inventory --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/site-migration-toolkit
 
       - name: Build deploy matrix
         id: matrix
-        if: ${{ needs.resolve_deployment_profile.outputs.terraform_action == 'apply' }}
+        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
         working-directory: ${{ env.ENV_DIR }}
         run: |
           hosts="$(jq -c 'keys' cmdb.json)"
@@ -329,7 +319,7 @@ jobs:
           echo "count=$(jq 'length' cmdb.json)" >> "$GITHUB_OUTPUT"
 
       - name: Upload CMDB artifact
-        if: ${{ needs.resolve_deployment_profile.outputs.terraform_action == 'apply' }}
+        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
         uses: actions/upload-artifact@v7
         with:
           name: site-migration-toolkit-cmdb
@@ -337,27 +327,10 @@ jobs:
             ${{ env.ENV_DIR }}/cmdb.json
             ${{ env.ENV_DIR }}/inventory.ini
 
-  # ---------------------------------------------------------------------------
-  # 步骤 1.5: 初始化新环境 Vault 凭证 (Initialize Vault Secrets)
-  # ---------------------------------------------------------------------------
-  initialize_vault_secrets:
-    name: Initialize Vault Secrets
-    needs: provision
-    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Authenticate to Vault
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          exportToken: true
-
       - name: Initialize Databases Credentials
+        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+        env:
+          VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
         run: |
           URL="${VAULT_ADDR}/v1/kv/data/${VAULT_ENV_PATH}/databases"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Vault-Token: $VAULT_TOKEN" "$URL")
@@ -379,6 +352,9 @@ jobs:
           fi
 
       - name: Initialize Agent Proxy Credentials
+        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+        env:
+          VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
         run: |
           URL="${VAULT_ADDR}/v1/kv/data/${VAULT_ENV_PATH}/agent-proxy"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Vault-Token: $VAULT_TOKEN" "$URL")
@@ -391,6 +367,7 @@ jobs:
           else
             echo "Credentials already exist (Status: $STATUS). Skipping."
           fi
+          fi
 
   # ---------------------------------------------------------------------------
   # 步骤 2: 基础环境安装 (Bootstrap Deploy)
@@ -399,7 +376,7 @@ jobs:
     name: Deploy Base Services on ${{ matrix.host }}
     # 只负责 ai-workspace 域 (litellm/qmd/x-memory-hub/postgres/gateway-openclaw 等),
     # 不要对 web-saas / infra-platform 域跑这个全家桶安装器。
-    needs: [provision, initialize_vault_secrets]
+    needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","ai-workspace"]'), needs.provision.outputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -490,7 +467,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy_web_saas:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
-    needs: [provision, initialize_vault_secrets]
+    needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","web-saas"]'), needs.provision.outputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -871,7 +848,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy_infra_platform:
     name: Deploy Open Platform Services on ${{ matrix.host }}
-    needs: [provision, initialize_vault_secrets]
+    needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","infra-platform"]'), needs.provision.outputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -1080,7 +1057,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy_agent_proxy:
     name: Deploy Agent Proxy Services on ${{ matrix.host }}
-    needs: [provision, initialize_vault_secrets]
+    needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","agent-proxy"]'), needs.provision.outputs.target_domains) }}
     runs-on: ubuntu-latest
     strategy:
@@ -1305,7 +1282,7 @@ jobs:
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
-    needs: [provision, initialize_vault_secrets, deploy_base, deploy_web_saas, deploy_infra_platform, deploy_agent_proxy, data_migration]
+    needs: [provision, deploy_base, deploy_web_saas, deploy_infra_platform, deploy_agent_proxy, data_migration]
     if: |
       always() &&
       github.event.inputs.terraform_action == 'apply' &&
