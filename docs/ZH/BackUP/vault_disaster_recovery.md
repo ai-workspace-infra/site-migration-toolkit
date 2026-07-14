@@ -41,7 +41,7 @@ Vault 的数据备份与恢复可以从两个不同的维度进行：
 ### 2.2 本地定时任务配置
 
 1. 将 `backup_vault_kv.py` 拷贝至宿主机 `/opt/backup/backup_vault_kv.py`，确保可执行。
-2. 配置凭证配置文件 `/opt/backup/.vault_backup_env`（`chmod 600`）：
+2. 配置凭证配置文件 `/opt/backup/.backup_env`（`chmod 600`）：
 ```bash
 # Vault API 访问地址
 export VAULT_ADDR="https://vault.svc.plus"
@@ -58,7 +58,7 @@ export BACKUP_ENCRYPTION_PASS="YourSuperSecurePassphrase"
 ```
 3. 在宿主机添加 Cron 任务（每天凌晨 3:30 自动执行）：
 ```cron
-30 3 * * * /usr/bin/python3 /opt/backup/backup_vault_kv.py >> /var/log/vault_backup.log 2>&1
+30 3 * * * /bin/bash -c "source /opt/backup/.backup_env && /usr/bin/python3 /opt/backup/backup_vault_kv.py" >> /var/log/vault_backup_s3.log 2>&1
 ```
 
 ---
