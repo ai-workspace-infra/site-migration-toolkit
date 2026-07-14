@@ -1,8 +1,8 @@
-# Site Migration & Backup Toolkit (业务域重构版)
+# platform-ops-toolkit
 
 *🇨🇳 中文版 | Chinese version*
 
-欢迎使用 **Site Migration & Backup Toolkit**。本代码库提供了面向 AI Workspace 基础架构灾难恢复及跨机房整体迁移的自动化解决方案。
+欢迎使用 **platform-ops-toolkit**。本代码库提供了面向 AI Workspace 基础架构灾难恢复及跨机房整体迁移的自动化解决方案。
 
 > ℹ️ **架构升级提示**：本工具集已经从旧版的“All-in-One”大一统架构，重构为以**业务域 (Business Domains)** 为边界的高内聚架构。这允许我们针对不同业务系统进行解耦、按需迁移及独立演进。
 
