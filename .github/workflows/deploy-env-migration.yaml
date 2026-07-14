@@ -118,7 +118,8 @@ env:
   # configurable, while deriving a stable environment for release refs.
   DEPLOY_ENV: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || 'prod') || github.event.inputs.vault_env_path }}
   VAULT_ENV_PATH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || 'prod') || github.event.inputs.vault_env_path }}
-  VAULT_ROLE: github-actions-site-migration-toolkit
+  # 如果后续针对 NAT PROD 需要不同 Role，可配置为: ${{ github.event.inputs.vault_env_path == 'nat-prod' && 'nat-prod-role' || 'github-actions-platform-ops-toolkit' }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit
   VAULT_KV: kv/data/CICD
   VAULT_KV_OPENCLAW: kv/data/openclaw
   # UAT never reads production web-saas credentials. Keep the historical
