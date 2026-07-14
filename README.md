@@ -39,6 +39,22 @@ make migrate DOMAIN=all
 
 通过流水线触发整体或部分域的迁移时，底层同样会调用相应的业务域策略模块。
 
+### 环境 Profile 发布（push）
+
+`deploy-env-migration.yaml` 在分支推送时运行完整的 profile，不使用
+`UAT_TARGET_HOST` 或 `DEFAULT_TARGET_HOST`。Terraform 先创建或更新主机，再生成
+CMDB；后续 Ansible 只能使用该 run 的 CMDB inventory。
+
+| 来源 | 环境 | 资源声明 | state key / workspace | 动作 |
+| --- | --- | --- | --- | --- |
+| `main` | `uat` | `web-saas-uat.yaml` | `site-migration-toolkit/uat/terraform.tfstate` / `web-saas-uat` | provision + web-saas deploy |
+| `release/**`、`v*` | `prod` | `web-saas-prod.yaml` | `site-migration-toolkit/prod/terraform.tfstate` / `web-saas-prod` | provision + web-saas deploy |
+| `workflow_dispatch` | 用户选择 | `web-saas-<vault_env_path>.yaml` | 对应环境 | 用户指定 |
+
+首次 UAT 发布前仍须配置 `console.uat.svc.plus`、`postgresql-saas.uat.svc.plus`
+的 DNS，并在 Vault 写入 `kv/data/uat/web-saas` 的 web-saas 凭证。工作流会在这些
+凭证缺失时失败，绝不会回退读取生产 `kv/data/WEB_SAAS`。
+
 ### ⚠️ Vault 鉴权配置 (GitHub Actions OIDC → Vault JWT)
 
 流水线不使用任何 GitHub Actions Secrets 存敏感值；所有凭证都在运行时经
@@ -100,7 +116,9 @@ EOF
 >
 > 后续新增业务域的专属密钥时，沿用同一模式：新开 `kv/data/<DOMAIN>` 路径存放该域的 key，然后在这个 policy 里追加对应的 `data` + `metadata` 两段 path。不要把业务域密钥混进共享的 `kv/data/CICD`，也不要借用其他仓库的 policy。
 
-#### 2. Role：只信任本仓库的 OIDC 身份
+#### 2. Role：只信任特定仓库的 OIDC 身份
+
+对于默认的 `site-migration-toolkit` 仓库：
 
 ```bash
 vault write auth/jwt/role/github-actions-site-migration-toolkit - <<'EOF'
@@ -120,9 +138,32 @@ vault write auth/jwt/role/github-actions-site-migration-toolkit - <<'EOF'
 EOF
 ```
 
-> `bound_claims` 把这个 role 锁定为**只有本仓库的 workflow** 能换取 token；
+对于 `platform-ops-toolkit` 仓库（如果您的流水线在此处运行）：
+
+```bash
+vault write auth/jwt/role/github-actions-platform-ops-toolkit - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "repository",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "repository": "ai-workspace-infra/platform-ops-toolkit",
+    "sub": "repo:ai-workspace-infra/platform-ops-toolkit:*"
+  },
+  "token_policies": ["github-actions-site-migration-toolkit"], 
+  "token_ttl": "20m",
+  "token_max_ttl": "30m"
+}
+EOF
+```
+
+> `bound_claims` 把这个 role 锁定为**只有对应仓库的 workflow** 能换取 token；
 > 如需进一步只允许 main 分支触发，把 `sub` 收窄为
-> `repo:ai-workspace-infra/site-migration-toolkit:ref:refs/heads/main`。
+> `repo:ai-workspace-infra/<repo-name>:ref:refs/heads/main`。
+
+> ⚠️ **NAT PROD 环境特别说明**：
+> NAT PROD 需要使用不同的 `VAULT_ROLE` 和不同的 `KV path`，不能与普通的 UAT/PROD 混用。请确保在对应的 pipeline `env` 中进行独立区分。
 
 #### 3. 填充各域 KV 参数
 
@@ -139,8 +180,13 @@ EOF
 `.github/workflows/deploy-env-migration.yaml` 中每个 job：
 
 1. `permissions: { contents: read, id-token: write }` —— `id-token: write` 是 OIDC 换 token 的前提；
-2. `hashicorp/vault-action@v4`：`method: jwt`、`role: github-actions-site-migration-toolkit`、`jwtGithubAudience: vault`，`secrets` 里每行 `<kv路径> <键> | <输出名>`；
-3. 后续步骤经 `steps.vault.outputs.<输出名>` 消费，不落盘、不进 GitHub Secrets。
+2. 确保 `env` 中配置了对应的角色环境变量（例如对于 platform-ops-toolkit）：
+   ```yaml
+   env:
+     VAULT_ROLE: github-actions-platform-ops-toolkit
+   ```
+3. `hashicorp/vault-action@v4`：`method: jwt`、`role: ${{ env.VAULT_ROLE }}`、`jwtGithubAudience: vault`，`secrets` 里每行 `<kv路径> <键> | <输出名>`；
+4. 后续步骤经 `steps.vault.outputs.<输出名>` 消费，不落盘、不进 GitHub Secrets。
 
 #### 5. 验收与排障
 
