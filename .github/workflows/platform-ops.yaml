@@ -92,10 +92,14 @@ on:
         default: false
         type: boolean
       vault_env_path:
-        description: "Vault 环境路径 (如 uat, prod)，用于动态 secrets 的读写"
+        description: "Vault 环境路径 (如 sit, nat, prod)，用于动态 secrets 的读写"
         required: true
         default: "nat"
-        type: string
+        type: choice
+        options:
+          - sit
+          - nat
+          - prod
       vault_addr:
         description: "Vault 服务地址 (可选，覆盖默认的 https://vault.svc.plus)"
         required: false
@@ -117,17 +121,14 @@ env:
   VAULT_ADDR: ${{ github.event.inputs.vault_addr || 'https://vault.svc.plus' }}
   # Push events do not have workflow_dispatch inputs. Keep manual runs
   # configurable, while deriving a stable environment for release refs.
-  DEPLOY_ENV: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || 'prod') || github.event.inputs.vault_env_path }}
-  VAULT_ENV_PATH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || 'prod') || github.event.inputs.vault_env_path }}
-  # 如果后续针对 NAT PROD 需要不同 Role，可配置为: ${{ github.event.inputs.vault_env_path == 'nat-prod' && 'nat-prod-role' || 'github-actions-platform-ops-toolkit' }}
-  VAULT_ROLE: github-actions-platform-ops-toolkit
+  DEPLOY_ENV: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
+  VAULT_ENV_PATH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
   VAULT_KV: kv/data/CICD
   VAULT_KV_OPENCLAW: kv/data/openclaw
-  # UAT never reads production web-saas credentials. Keep the historical
-  # production location until it is migrated, but require an explicit UAT KV.
-  VAULT_KV_WEB_SAAS: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'kv/data/nat/web-saas' || (github.event_name == 'workflow_dispatch' && github.event.inputs.vault_env_path == 'nat') && 'kv/data/nat/web-saas' || 'kv/data/WEB_SAAS' }}
-  VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || 'prod') || github.event.inputs.vault_env_path }}/databases
-  VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || 'prod') || github.event.inputs.vault_env_path }}/agent-proxy
+  VAULT_KV_WEB_SAAS: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))) && 'kv/data/WEB_SAAS' || (github.event_name == 'workflow_dispatch' && github.event.inputs.vault_env_path == 'prod') && 'kv/data/WEB_SAAS' || format('kv/data/{0}/web-saas', github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || 'sit') || github.event.inputs.vault_env_path) }}
+  VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/databases
+  VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/agent-proxy
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
   # 指向 site-migration-toolkit 的 Terraform 目录
   ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/site-migration-toolkit
@@ -203,7 +204,12 @@ jobs:
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
                 source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=onwalk.net; confirm_dns_switch=false
                 ;;
-              *) echo "Unsupported deployment ref: ${GITHUB_REF}" >&2; exit 1 ;;
+              *)
+                deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
+                state_key=site-migration-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
+                terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
+                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=sit.svc.plus; confirm_dns_switch=false
+                ;;
             esac
           fi
           for key in deployment_env resource_file terraform_workspace state_key run target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base confirm_dns_switch; do
