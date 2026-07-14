@@ -41,7 +41,7 @@ make migrate DOMAIN=all
 
 ### 环境 Profile 发布（push）
 
-`deploy-env-migration.yaml` 在分支推送时运行完整的 profile，不使用
+`platform-ops.yaml` 在分支推送时运行完整的 profile，不使用
 `UAT_TARGET_HOST` 或 `DEFAULT_TARGET_HOST`。Terraform 先创建或更新主机，再生成
 CMDB；后续 Ansible 只能使用该 run 的 CMDB inventory。
 
@@ -177,7 +177,7 @@ EOF
 
 #### 4. Workflow 侧接入（已落地，无需改动）
 
-`.github/workflows/deploy-env-migration.yaml` 中每个 job：
+`.github/workflows/platform-ops.yaml` 中每个 job：
 
 1. `permissions: { contents: read, id-token: write }` —— `id-token: write` 是 OIDC 换 token 的前提；
 2. 确保 `env` 中配置了对应的角色环境变量（例如对于 platform-ops-toolkit）：
