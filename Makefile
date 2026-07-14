@@ -3,7 +3,7 @@
 DOMAIN ?= ai-workspace
 
 help:
-	@echo "AI Workspace Site Migration & Backup Toolkit (Domain-Driven Playbooks)"
+	@echo "platform-ops-toolkit (Domain-Driven Playbooks)"
 	@echo "Usage:"
 	@echo "  make migrate DOMAIN=domain1,domain2 - Execute full site migration (Source -> Target)"
 	@echo "  make backup  DOMAIN=domain1,domain2 - Execute cold backup on the target host"

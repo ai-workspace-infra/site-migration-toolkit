@@ -20,7 +20,7 @@ def get_inventory_path(toolkit_root: Path) -> Path:
     return None
 
 def main():
-    parser = argparse.ArgumentParser(description="AI Workspace Site Migration & Backup Toolkit Wrapper")
+    parser = argparse.ArgumentParser(description="platform-ops-toolkit Wrapper")
     parser.add_argument("action", choices=["migrate", "backup", "restore"], help="Toolkit action to execute")
     parser.add_argument("--domain", required=True, help="Domain to execute (ai-workspace, web-saas, infra-platform, agent-proxy)")
     
