@@ -2,7 +2,7 @@ name: Deploy Environment & Migrate Data (Data Sync)
 
 # =============================================================================
 # IaC ↔ 数据流单向迁移流水线 (Site Recovery)
-# 1. 动态 Provision (基于 Terraform 创建新环境 site-migration-toolkit)
+# 1. 动态 Provision (基于 Terraform 创建新环境 platform-ops-toolkit)
 # 2. 部署基础服务 (Bootstrap 部署，跑空环境)
 # 3. 生产环境克隆与单向同步 (通过 site_migration Ansible 角色)
 # =============================================================================
@@ -124,8 +124,8 @@ env:
   VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/databases
   VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/agent-proxy
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
-  # 指向 site-migration-toolkit 的 Terraform 目录
-  ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/site-migration-toolkit
+  # 指向 platform-ops-toolkit 的 Terraform 目录
+  ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/platform-ops-toolkit
   PLAYBOOKS_DIR: infra/playbooks
 
 jobs:
@@ -174,7 +174,7 @@ jobs:
             
             resource_file="${deployment_env}/${rf}"
             terraform_workspace="${rf}-${deployment_env}"
-            state_key="site-migration-toolkit/${deployment_env}/${rf}.tfstate"
+            state_key="platform-ops-toolkit/${deployment_env}/${rf}.tfstate"
             run="${{ github.event.inputs.run_provision_and_deploy }}"
             
             user_action="${{ github.event.inputs.action }}"
@@ -197,26 +197,26 @@ jobs:
             case "${GITHUB_REF}" in
               refs/heads/main)
                 deployment_env=uat; resource_file=uat/web-saas; terraform_workspace=web-saas-uat
-                state_key=site-migration-toolkit/uat/web-saas.tfstate; run=true; target_domains=web-saas
+                state_key=platform-ops-toolkit/uat/web-saas.tfstate; run=true; target_domains=web-saas
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
                 source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-uat; confirm_dns_switch=false
                 ;;
               refs/heads/release/*|refs/tags/v*)
                 deployment_env=prod; resource_file=prod/web-saas; terraform_workspace=web-saas-prod
-                state_key=site-migration-toolkit/prod/web-saas.tfstate; run=true; target_domains=web-saas
+                state_key=platform-ops-toolkit/prod/web-saas.tfstate; run=true; target_domains=web-saas
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
                 source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=onwalk.net; env_suffix=""; confirm_dns_switch=false
                 ;;
               *)
                 deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
-                state_key=site-migration-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
+                state_key=platform-ops-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
                 source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-sit; confirm_dns_switch=false
                 ;;
             esac
           fi
           for key in deployment_env resource_file terraform_workspace state_key run target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch; do
-            value="${!key}"
+            value="${!key:-}"
             case "$key" in run) echo "run_provision_and_deploy=$value" ;; *) echo "$key=$value" ;; esac >> "$GITHUB_OUTPUT"
           done
           echo "vault_env_path=${deployment_env}" >> "$GITHUB_OUTPUT"
@@ -292,7 +292,7 @@ jobs:
           TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
           TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
           TF_WORKSPACE_PREFIX: env
-        run: python3 scripts/generate.py render --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/site-migration-toolkit
+        run: python3 scripts/generate.py render --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
       - name: Terraform init
         if: steps.route.outputs.run_provision_and_deploy == 'true'
@@ -325,7 +325,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-        run: python3 scripts/generate.py inventory --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/site-migration-toolkit
+        run: python3 scripts/generate.py inventory --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
       - name: Build deploy matrix
         id: matrix
@@ -340,7 +340,7 @@ jobs:
         if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
         uses: actions/upload-artifact@v7
         with:
-          name: site-migration-toolkit-cmdb
+          name: platform-ops-toolkit-cmdb
           path: |
             ${{ env.ENV_DIR }}/cmdb.json
             ${{ env.ENV_DIR }}/inventory.ini
@@ -410,7 +410,7 @@ jobs:
       - name: Download CMDB
         uses: actions/download-artifact@v8
         with:
-          name: site-migration-toolkit-cmdb
+          name: platform-ops-toolkit-cmdb
           path: cmdb
 
       - name: Check if host belongs to ai_workspace group
@@ -509,7 +509,7 @@ jobs:
       - name: Download CMDB
         uses: actions/download-artifact@v8
         with:
-          name: site-migration-toolkit-cmdb
+          name: platform-ops-toolkit-cmdb
           path: cmdb
 
       - name: Check if host belongs to web_saas group
@@ -883,7 +883,7 @@ jobs:
       - name: Download CMDB
         uses: actions/download-artifact@v8
         with:
-          name: site-migration-toolkit-cmdb
+          name: platform-ops-toolkit-cmdb
           path: cmdb
 
       - name: Check if host belongs to infra_platform group
@@ -1092,7 +1092,7 @@ jobs:
       - name: Download CMDB
         uses: actions/download-artifact@v8
         with:
-          name: site-migration-toolkit-cmdb
+          name: platform-ops-toolkit-cmdb
           path: cmdb
 
       - name: Check if host belongs to agent_proxy group
@@ -1241,13 +1241,13 @@ jobs:
         if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
         uses: actions/download-artifact@v8
         with:
-          name: site-migration-toolkit-cmdb
+          name: platform-ops-toolkit-cmdb
           path: cmdb
 
-      - name: Checkout site-migration-toolkit
+      - name: Checkout platform-ops-toolkit
         uses: actions/checkout@v7
         with:
-          path: site-migration-toolkit
+          path: platform-ops-toolkit
 
       - name: Checkout playbooks
         uses: actions/checkout@v7
@@ -1284,7 +1284,7 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
 
       - name: Run Toolkit Action (${{ needs.provision.outputs.toolkit_action }})
-        working-directory: site-migration-toolkit
+        working-directory: platform-ops-toolkit
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
@@ -1314,16 +1314,16 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout site-migration-toolkit
+      - name: Checkout platform-ops-toolkit
         uses: actions/checkout@v7
         with:
-          path: site-migration-toolkit
+          path: platform-ops-toolkit
 
       - name: Download CMDB
         if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
         uses: actions/download-artifact@v8
         with:
-          name: site-migration-toolkit-cmdb
+          name: platform-ops-toolkit-cmdb
           path: cmdb
 
       - name: Checkout playbooks
@@ -1357,7 +1357,7 @@ jobs:
           if [ "${{ github.event.inputs.run_provision_and_deploy }}" = "true" ]; then
             INVENTORY_PATH="../cmdb/inventory.ini"
           else
-            INVENTORY_PATH="../site-migration-toolkit/inventory.ini"
+            INVENTORY_PATH="../platform-ops-toolkit/inventory.ini"
           fi
           cd playbooks
           ansible-playbook -i "$INVENTORY_PATH" update_site_dns.yml -e "target_domain=${{ needs.provision.outputs.target_domain_base }}" -e "source_domain=${{ needs.provision.outputs.source_domain_base }}"

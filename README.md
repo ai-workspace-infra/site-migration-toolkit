@@ -45,9 +45,9 @@ When triggered, `platform-ops.yaml` automatically routes to the appropriate deli
 
 | Trigger Event / Source | Target Environment | Resource Declaration | State Key / Workspace |
 | --- | --- | --- | --- |
-| `pull_request` | `sit` | `sit/all-in-one.yaml` | `site-migration-toolkit/sit/all-in-one.tfstate` |
-| `main` / `release/*` push | `uat` | `uat/web-saas-uat.yaml` | `site-migration-toolkit/uat/web-saas-uat.tfstate` |
-| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas-prod.yaml` | `site-migration-toolkit/prod/web-saas-prod.tfstate` |
+| `pull_request` | `sit` | `sit/all-in-one.yaml` | `platform-ops-toolkit/sit/all-in-one.tfstate` |
+| `main` / `release/*` push | `uat` | `uat/web-saas-uat.yaml` | `platform-ops-toolkit/uat/web-saas-uat.tfstate` |
+| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas-prod.yaml` | `platform-ops-toolkit/prod/web-saas-prod.tfstate` |
 | `workflow_dispatch` | User selected | `[env]/web-saas-[env].yaml` | Environment specific |
 
 Prior to the initial UAT / Prod release, you must configure DNS for the target environment (e.g., `console.uat.svc.plus` or the production domains) and inject the corresponding `kv/data/[env]/web-saas` credentials into Vault. The workflow will fail if these credentials are missing. **Environments are strictly isolated, and pipelines will never read secrets across environments.**

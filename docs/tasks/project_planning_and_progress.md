@@ -4,7 +4,7 @@
 
 **项目名称**: SVC.plus Platform Operations Toolkit  
 **定位**: Cloud Neutral Environment Lifecycle Management Platform  
-**目标**: 将现有 `site-migration-toolkit` 升级为面向云中立平台的环境生命周期管理工具。不仅负责迁移，还统一管理：多环境管理、应用部署、数据迁移、配置同步、备份与恢复、灾难恢复、发布回滚、基础设施变更操作。
+**目标**: 将现有 `platform-ops-toolkit` 升级为面向云中立平台的环境生命周期管理工具。不仅负责迁移，还统一管理：多环境管理、应用部署、数据迁移、配置同步、备份与恢复、灾难恢复、发布回滚、基础设施变更操作。
 
 **核心理念**: Environment Lifecycle as Code  
 通过 CLI、API、MCP 三种方式，让开发者、平台工程师和 AI Agent 可以安全操作基础设施。
@@ -82,7 +82,7 @@ ai-workspace-infra/
 - [ ] 定义核心功能接口 (Environment, Migration, Backup, Deployment, Rollback)。
 - [ ] 封装底层执行逻辑，集成 Terraform/OpenTofu, Ansible, Kubernetes。
 - [ ] 集成 Vault（OIDC / JWT），实现 Secret 动态获取。
-- [ ] 将现有 `site-migration-toolkit` 的逻辑平滑迁移至新引擎。
+- [ ] 将现有 `platform-ops-toolkit` 的逻辑平滑迁移至新引擎。
 
 ### ⏳ Phase 3: API Layer & Security (规划中)
 - [ ] 搭建 REST/gRPC API 服务（如基于 Gin 或 gRPC）。

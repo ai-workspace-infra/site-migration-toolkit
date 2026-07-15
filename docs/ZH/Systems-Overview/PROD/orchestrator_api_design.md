@@ -33,7 +33,7 @@
   
   // ================= 预留扩展 (Reserved Extensions) =================
   "vault_integration": {
-    "role": "github-actions-site-migration-toolkit",
+    "role": "github-actions-platform-ops-toolkit",
     "kv_path": "kv/data/CICD"
   },
   "finops": {
@@ -69,7 +69,7 @@
   "status": "in_progress",          // enum: ["queued", "in_progress", "completed", "failed", "cancelled"]
   "target_domains": "ai-workspace",
   "current_stage": "deploy_base",   // enum: ["provision", "deploy_base", "data_migration", "switch_dns"]
-  "github_run_url": "https://github.com/ai-workspace-infra/site-migration-toolkit/actions/runs/123456",
+  "github_run_url": "https://github.com/ai-workspace-infra/platform-ops-toolkit/actions/runs/123456",
   "started_at": "2026-07-02T16:45:05Z",
   "completed_at": null
 }
