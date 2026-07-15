@@ -48,7 +48,7 @@ echo "[INFO] 备份完成！"
 
 ### 2.2 自动加密备份并传输至 S3 (推荐)
 
-项目下新版备份脚本位于 [backup_postgres.sh](file:///Users/shenlan/workspaces/ai-workspace-infra/site-migration-toolkit/scripts/backup/backup_postgres.sh)。该脚本会执行以下流程：
+项目下新版备份脚本位于 [backup_postgres.sh](file:///Users/shenlan/workspaces/ai-workspace-infra/platform-ops-toolkit/scripts/backup/backup_postgres.sh)。该脚本会执行以下流程：
 1. 运行 Python 辅助脚本，以 JWT 认证或 Token 方式登录 Vault (`https://vault.svc.plus`)。
 2. 从 Vault 秘密路径 `kv/CICD` 中动态拉取 S3 对象存储凭证（`TF_STATE_BUCKET`, `TF_STATE_ACCESS_KEY`, `TF_STATE_SECRET_KEY`, `TF_STATE_ENDPOINT`, `TF_STATE_REGION`）。
 3. 使用 `pg_dump` 对 `postgresql-svc-plus` 里的每一个数据库做逻辑备份。

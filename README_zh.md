@@ -45,9 +45,9 @@ make migrate DOMAIN=all
 
 | 触发事件 / 来源 | 目标环境 | 资源声明映射 | state key / workspace |
 | --- | --- | --- | --- |
-| `pull_request` | `sit` | `sit/all-in-one.yaml` | `site-migration-toolkit/sit/all-in-one.tfstate` |
-| `main` / `release/*` push | `uat` | `uat/web-saas-uat.yaml` | `site-migration-toolkit/uat/web-saas-uat.tfstate` |
-| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas-prod.yaml` | `site-migration-toolkit/prod/web-saas-prod.tfstate` |
+| `pull_request` | `sit` | `sit/all-in-one.yaml` | `platform-ops-toolkit/sit/all-in-one.tfstate` |
+| `main` / `release/*` push | `uat` | `uat/web-saas-uat.yaml` | `platform-ops-toolkit/uat/web-saas-uat.tfstate` |
+| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas-prod.yaml` | `platform-ops-toolkit/prod/web-saas-prod.tfstate` |
 | `workflow_dispatch` | 用户选择 | `[env]/web-saas-[env].yaml` | 对应环境 |
 
 首次 UAT / Prod 发布前仍须配置对应环境（例如 `console.uat.svc.plus` 或生产域名）的 DNS，并在 Vault 写入对应的 `kv/data/[env]/web-saas` 凭证。工作流会在这些凭证缺失时失败，**环境之间严格隔离，绝不会跨环境读取 Secret**。

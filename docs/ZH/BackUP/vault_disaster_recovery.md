@@ -27,8 +27,8 @@ Vault 的数据备份与恢复可以从两个不同的维度进行：
 ## 2. 自动化备份策略（API 级 / KV2 全备份）
 
 我们已在项目中提供自动化备份与恢复脚本：
-- **备份脚本**：[backup_vault_kv.py](file:///Users/shenlan/workspaces/ai-workspace-infra/site-migration-toolkit/scripts/backup/backup_vault_kv.py)
-- **还原脚本**：[restore_vault_kv.py](file:///Users/shenlan/workspaces/ai-workspace-infra/site-migration-toolkit/scripts/backup/restore_vault_kv.py)
+- **备份脚本**：[backup_vault_kv.py](file:///Users/shenlan/workspaces/ai-workspace-infra/platform-ops-toolkit/scripts/backup/backup_vault_kv.py)
+- **还原脚本**：[restore_vault_kv.py](file:///Users/shenlan/workspaces/ai-workspace-infra/platform-ops-toolkit/scripts/backup/restore_vault_kv.py)
 
 ### 2.1 备份流程说明
 1. 脚本会通过 `VAULT_ADDR` 与 `VAULT_TOKEN`（或 `VAULT_JWT` + `VAULT_ROLE` 动态登录）连接 Vault。

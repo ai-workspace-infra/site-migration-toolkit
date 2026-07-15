@@ -58,12 +58,12 @@ provision 出来的主机上。
 这 6 个 key 都需要提前在 Vault 里手动填好真实值；缺哪个，对应 ansible 任务会在
 assert/连接阶段明确报错，不会静默用空值跑下去。
 
-### 必须的 Vault Policy (已在 [run #28732574921](https://github.com/ai-workspace-infra/site-migration-toolkit/actions/runs/28732574921/job/85200873591) 实测确认为阻塞项)
+### 必须的 Vault Policy (已在 [run #28732574921](https://github.com/ai-workspace-infra/platform-ops-toolkit/actions/runs/28732574921/job/85200873591) 实测确认为阻塞项)
 
 `Load Vault secrets` 这一步实测 `403 Forbidden`（整个 job 在读密钥这一步就失败，
 后面所有部署 step 都不会执行）。
 
-**根因**：`github-actions-site-migration-toolkit` 这个 JWT role 初始化时
+**根因**：`github-actions-platform-ops-toolkit` 这个 JWT role 初始化时
 （见 [walkthrough.md §4](../../ZH/BackUP/Site-Migration/walkthrough.md)）**没有自己的
 policy，借用的是 `token_policies: ["github-actions-xworkspace-console"]`**。而那个
 policy（定义在 xworkspace-console 仓库
@@ -78,7 +78,7 @@ export VAULT_ADDR=https://vault.svc.plus
 export VAULT_TOKEN="hvs.xxxxxxxxx"   # 管理员 Token
 
 # 1. 独立 policy：CICD 共享键(SSH/TF/Vultr) + web-saas 专属键
-vault policy write github-actions-site-migration-toolkit - <<'EOF'
+vault policy write github-actions-platform-ops-toolkit - <<'EOF'
 path "kv/data/CICD" {
   capabilities = ["read"]
 }
@@ -95,17 +95,17 @@ EOF
 
 # 2. 把 role 的 token_policies 从借用的 xworkspace-console 切换到独立 policy
 #    (其余 bound_claims 参数与 walkthrough.md 首次初始化保持一致)
-vault write auth/jwt/role/github-actions-site-migration-toolkit - <<'EOF'
+vault write auth/jwt/role/github-actions-platform-ops-toolkit - <<'EOF'
 {
   "role_type": "jwt",
   "user_claim": "repository",
   "bound_audiences": ["vault"],
   "bound_claims_type": "glob",
   "bound_claims": {
-    "repository": "ai-workspace-infra/site-migration-toolkit",
-    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
+    "repository": "ai-workspace-infra/platform-ops-toolkit",
+    "sub": "repo:ai-workspace-infra/platform-ops-toolkit:*"
   },
-  "token_policies": ["github-actions-site-migration-toolkit"],
+  "token_policies": ["github-actions-platform-ops-toolkit"],
   "token_ttl": "20m",
   "token_max_ttl": "30m"
 }
