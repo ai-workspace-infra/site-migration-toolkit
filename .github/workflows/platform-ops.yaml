@@ -120,7 +120,7 @@ env:
   VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
   VAULT_KV: kv/data/CICD
   VAULT_KV_OPENCLAW: kv/data/openclaw
-  VAULT_KV_WEB_SAAS: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))) && 'kv/data/WEB_SAAS' || (github.event_name == 'workflow_dispatch' && github.event.inputs.vault_env_path == 'prod') && 'kv/data/WEB_SAAS' || format('kv/data/{0}/web-saas', github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || 'sit') || github.event.inputs.vault_env_path) }}
+  VAULT_KV_WEB_SAAS: kv/data/WEB_SAAS
   VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/databases
   VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/agent-proxy
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
@@ -147,6 +147,7 @@ jobs:
       source_host: ${{ steps.route.outputs.source_host }}
       source_domain_base: ${{ steps.route.outputs.source_domain_base }}
       target_domain_base: ${{ steps.route.outputs.target_domain_base }}
+      env_suffix: ${{ steps.route.outputs.env_suffix }}
       confirm_dns_switch: ${{ steps.route.outputs.confirm_dns_switch }}
       vault_env_path: ${{ steps.route.outputs.vault_env_path }}
       hosts: ${{ steps.matrix.outputs.hosts }}
@@ -198,23 +199,23 @@ jobs:
                 deployment_env=uat; resource_file=uat/web-saas; terraform_workspace=web-saas-uat
                 state_key=site-migration-toolkit/uat/web-saas.tfstate; run=true; target_domains=web-saas
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=uat.svc.plus; confirm_dns_switch=false
+                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-uat; confirm_dns_switch=false
                 ;;
               refs/heads/release/*|refs/tags/v*)
                 deployment_env=prod; resource_file=prod/web-saas; terraform_workspace=web-saas-prod
                 state_key=site-migration-toolkit/prod/web-saas.tfstate; run=true; target_domains=web-saas
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=onwalk.net; confirm_dns_switch=false
+                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=onwalk.net; env_suffix=""; confirm_dns_switch=false
                 ;;
               *)
                 deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
                 state_key=site-migration-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=sit.svc.plus; confirm_dns_switch=false
+                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-sit; confirm_dns_switch=false
                 ;;
             esac
           fi
-          for key in deployment_env resource_file terraform_workspace state_key run target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base confirm_dns_switch; do
+          for key in deployment_env resource_file terraform_workspace state_key run target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch; do
             value="${!key}"
             case "$key" in run) echo "run_provision_and_deploy=$value" ;; *) echo "$key=$value" ;; esac >> "$GITHUB_OUTPUT"
           done
@@ -786,7 +787,7 @@ jobs:
           # 角色默认的 Caddy 站点写死 accounts.svc.plus / svc.plus, 迁移环境
           # 必须按目标域参数化, 否则 fragment 服务的是源站域名
           jq -n \
-            --arg site "accounts.${{ needs.provision.outputs.target_domain_base }}" \
+            --arg site "accounts${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}" \
             --arg fwd "${{ needs.provision.outputs.target_domain_base }}" \
             '{accounts_service_caddy_sites: [{server_names: [$site], default_forwarded_host: $fwd, upstream: "127.0.0.1:18081"}]}' \
             > /tmp/accounts-caddy-vars.json
@@ -830,7 +831,7 @@ jobs:
             --arg image "ghcr.io/ai-workspace-services/console:latest" \
             --arg user "$GHCR_USERNAME" \
             --arg pass "$GHCR_PASSWORD" \
-            --arg domain "console.${{ needs.provision.outputs.target_domain_base }}" \
+            --arg domain "console${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}" \
             '{console_service_target_host: $hosts, console_service_frontend_image: $image, console_service_registry_username: $user, console_service_registry_password: $pass, CANONICAL_DOMAIN: $domain, SERVED_DOMAINS: $domain}' \
             > /tmp/console-vars.json
           ansible-playbook -i ../cmdb/inventory.ini deploy_console_svc_plus.yml \
@@ -857,7 +858,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
             --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
+            -e "vector_prometheus_remote_write_url=https://observability${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
 
   # ---------------------------------------------------------------------------
   # 步骤 2c: Open Platform 域服务部署 (caddy / docker / postgres / gitea / zitadel / observability)
@@ -1043,7 +1044,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_zitadel_docker.yaml \
             -e "zitadel_hosts=${{ matrix.host }}" \
-            -e "domain=iam.${{ needs.provision.outputs.target_domain_base }}"
+            -e "domain=iam${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}"
 
       - name: Deploy Observability Server Stack (VictoriaMetrics & Grafana)
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -1066,7 +1067,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
             --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
+            -e "vector_prometheus_remote_write_url=https://observability${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
 
   # ---------------------------------------------------------------------------
   # 步骤 2d: Agent Proxy 域服务部署 (caddy / xray / xray-exporter / vector / agent-svc-plus)
@@ -1196,7 +1197,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_xray_proxy_server.yml \
             -e "agent_service_hosts=${{ matrix.host }}" \
-            -e "agent_controller_url=https://accounts.${{ needs.provision.outputs.target_domain_base }}" \
+            -e "agent_controller_url=https://accounts${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}" \
             -e "agent_id=${{ matrix.host }}" \
             -e "xray_uuid=${XRAY_UUID}" \
             -e "agent_svc_plus_manage_source_checkout=true" \
@@ -1224,7 +1225,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
             --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
+            -e "vector_prometheus_remote_write_url=https://observability${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
 
   # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
@@ -1294,7 +1295,7 @@ jobs:
           MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
           MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
         run: |
-          make ${{ needs.provision.outputs.toolkit_action }} DOMAIN=${{ needs.provision.outputs.target_domains }} RUN_ARGS="-e source_host=${{ needs.provision.outputs.source_host }} -e target_host=www.${{ needs.provision.outputs.target_domain_base }} -e target_domain=${{ needs.provision.outputs.target_domain_base }} -e migration_flow.source.domain_base=${{ needs.provision.outputs.source_domain_base }}"
+          make ${{ needs.provision.outputs.toolkit_action }} DOMAIN=${{ needs.provision.outputs.target_domains }} RUN_ARGS="-e source_host=${{ needs.provision.outputs.source_host }} -e target_host=www${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }} -e target_domain=${{ needs.provision.outputs.target_domain_base }} -e migration_flow.source.domain_base=${{ needs.provision.outputs.source_domain_base }}"
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
