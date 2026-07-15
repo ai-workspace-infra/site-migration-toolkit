@@ -158,6 +158,20 @@ jobs:
 
     - name: Route ref to an explicit profile
       id: route
+      env:
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_REF: ${{ github.ref }}
+        INPUT_VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path }}
+        INPUT_TARGET_DOMAINS: ${{ github.event.inputs.target_domains }}
+        INPUT_RUN_PROVISION_AND_DEPLOY: ${{ github.event.inputs.run_provision_and_deploy }}
+        INPUT_ACTION: ${{ github.event.inputs.action }}
+        INPUT_INFRA_REF: ${{ github.event.inputs.infra_ref }}
+        INPUT_CONSOLE_REF: ${{ github.event.inputs.console_ref }}
+        INPUT_OFFLINE_MODE: ${{ github.event.inputs.offline_mode }}
+        INPUT_SOURCE_HOST: ${{ github.event.inputs.source_host }}
+        INPUT_SOURCE_DOMAIN_BASE: ${{ github.event.inputs.source_domain_base }}
+        INPUT_TARGET_DOMAIN_BASE: ${{ github.event.inputs.target_domain_base }}
+        INPUT_CONFIRM_DNS_SWITCH: ${{ github.event.inputs.confirm_dns_switch }}
       run: |-
         .github/scripts/platform-ops_provision_route-ref-to-an-explicit-profile.sh
 
