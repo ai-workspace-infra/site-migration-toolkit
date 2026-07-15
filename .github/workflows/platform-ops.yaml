@@ -382,7 +382,6 @@ jobs:
           else
             echo "Credentials already exist (Status: $STATUS). Skipping."
           fi
-          fi
 
   # ---------------------------------------------------------------------------
   # 步骤 2: 基础环境安装 (Bootstrap Deploy)
