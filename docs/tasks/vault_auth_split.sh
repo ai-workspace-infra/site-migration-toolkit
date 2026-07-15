@@ -75,57 +75,69 @@ path "kv/metadata/prod/*" {
 EOF
 
 echo "Creating SIT Role..."
-vault write auth/jwt/role/github-actions-platform-ops-toolkit-sit \
-  bound_audiences="vault" \
-  bound_claims_type="glob" \
-  bound_claims='{
+vault write auth/jwt/role/github-actions-platform-ops-toolkit-sit - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "actor",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
     "repository": "ai-workspace-infra/platform-ops-toolkit"
-  }' \
-  user_claim="actor" \
-  role_type="jwt" \
-  token_policies="github-actions-platform-ops-toolkit-sit" \
-  token_ttl="1h"
+  },
+  "token_policies": ["github-actions-platform-ops-toolkit-sit"],
+  "token_ttl": "1h"
+}
+EOF
 
 echo "Creating UAT Role (Bound to main branch)..."
-vault write auth/jwt/role/github-actions-platform-ops-toolkit-uat \
-  bound_audiences="vault" \
-  bound_claims_type="glob" \
-  bound_claims='{
+vault write auth/jwt/role/github-actions-platform-ops-toolkit-uat - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "actor",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
     "repository": "ai-workspace-infra/platform-ops-toolkit",
     "ref": "refs/heads/main"
-  }' \
-  user_claim="actor" \
-  role_type="jwt" \
-  token_policies="github-actions-platform-ops-toolkit-uat" \
-  token_ttl="1h"
+  },
+  "token_policies": ["github-actions-platform-ops-toolkit-uat"],
+  "token_ttl": "1h"
+}
+EOF
 
 echo "Creating PROD Role (Bound to release/* and v*)..."
-vault write auth/jwt/role/github-actions-platform-ops-toolkit-prod \
-  bound_audiences="vault" \
-  bound_claims_type="glob" \
-  bound_claims='{
+vault write auth/jwt/role/github-actions-platform-ops-toolkit-prod - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "actor",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
     "repository": "ai-workspace-infra/platform-ops-toolkit",
     "ref": "refs/heads/release/*"
-  }' \
-  user_claim="actor" \
-  role_type="jwt" \
-  token_policies="github-actions-platform-ops-toolkit-prod" \
-  token_ttl="1h"
+  },
+  "token_policies": ["github-actions-platform-ops-toolkit-prod"],
+  "token_ttl": "1h"
+}
+EOF
 
 # We add a separate role for prod tags since bound_claims is an exact match for glob objects, 
 # and vault CLI might have limitations combining multiple globs in a single ref field.
-# Alteruatively, "ref" could just use a common prefix, but for precision we create another role:
+# Alternatively, "ref" could just use a common prefix, but for precision we create another role:
 echo "Creating PROD Tags Role (Bound to v*)..."
-vault write auth/jwt/role/github-actions-platform-ops-toolkit-prod-tags \
-  bound_audiences="vault" \
-  bound_claims_type="glob" \
-  bound_claims='{
+vault write auth/jwt/role/github-actions-platform-ops-toolkit-prod-tags - <<'EOF'
+{
+  "role_type": "jwt",
+  "user_claim": "actor",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
     "repository": "ai-workspace-infra/platform-ops-toolkit",
     "ref": "refs/tags/v*"
-  }' \
-  user_claim="actor" \
-  role_type="jwt" \
-  token_policies="github-actions-platform-ops-toolkit-prod" \
-  token_ttl="1h"
+  },
+  "token_policies": ["github-actions-platform-ops-toolkit-prod"],
+  "token_ttl": "1h"
+}
+EOF
 
 echo "Done! Ensure you update your GitHub Actions workflow to request the appropriate role."
