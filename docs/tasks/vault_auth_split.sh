@@ -20,10 +20,13 @@ fi
 echo "Creating SIT Policy..."
 vault policy write github-actions-platform-ops-toolkit-sit - <<'EOF'
 # SIT Environment Access
-path "kv/data/CICD/*" {
+path "kv/data/CICD" {
   capabilities = ["read"]
 }
-path "kv/data/openclaw/*" {
+path "kv/metadata/CICD" {
+  capabilities = ["list", "read"]
+}
+path "kv/data/openclaw" {
   capabilities = ["read"]
 }
 path "kv/data/sit/*" {
@@ -37,14 +40,20 @@ EOF
 echo "Creating UAT Policy..."
 vault policy write github-actions-platform-ops-toolkit-uat - <<'EOF'
 # UAT Environment Access
-path "kv/data/CICD/*" {
+path "kv/data/CICD" {
   capabilities = ["read"]
 }
-path "kv/data/openclaw/*" {
+path "kv/metadata/CICD" {
+  capabilities = ["list", "read"]
+}
+path "kv/data/openclaw" {
   capabilities = ["read"]
 }
-path "kv/data/WEB_SAAS/*" {
+path "kv/data/WEB_SAAS" {
   capabilities = ["read"]
+}
+path "kv/metadata/WEB_SAAS" {
+  capabilities = ["list", "read"]
 }
 path "kv/data/uat/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
@@ -57,14 +66,20 @@ EOF
 echo "Creating PROD Policy..."
 vault policy write github-actions-platform-ops-toolkit-prod - <<'EOF'
 # PROD Environment Access
-path "kv/data/CICD/*" {
+path "kv/data/CICD" {
   capabilities = ["read"]
 }
-path "kv/data/openclaw/*" {
+path "kv/metadata/CICD" {
+  capabilities = ["list", "read"]
+}
+path "kv/data/openclaw" {
   capabilities = ["read"]
 }
-path "kv/data/WEB_SAAS/*" {
+path "kv/data/WEB_SAAS" {
   capabilities = ["read"]
+}
+path "kv/metadata/WEB_SAAS" {
+  capabilities = ["list", "read"]
 }
 path "kv/data/prod/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
