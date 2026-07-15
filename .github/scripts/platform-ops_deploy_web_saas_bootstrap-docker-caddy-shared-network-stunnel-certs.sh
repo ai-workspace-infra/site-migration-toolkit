@@ -36,4 +36,4 @@ cat > /tmp/web-saas-bootstrap.yml <<'EOF'
       when: shared_network_inspect.rc != 0
 EOF
 ansible-playbook -i ../cmdb/inventory.ini /tmp/web-saas-bootstrap.yml \
-  -e "target_host=${{ matrix.host }}"
+  -e "target_host=${MATRIX_HOST}"

@@ -1,2 +1,2 @@
 #!/bin/bash
-make ${{ needs.provision.outputs.toolkit_action }} DOMAIN=${{ needs.provision.outputs.target_domains }} RUN_ARGS="-e source_host=${{ needs.provision.outputs.source_host }} -e target_host=www${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }} -e target_domain=${{ needs.provision.outputs.target_domain_base }} -e migration_flow.source.domain_base=${{ needs.provision.outputs.source_domain_base }}"
+make ${PROVISION_TOOLKIT_ACTION} DOMAIN=${PROVISION_TARGET_DOMAINS} RUN_ARGS="-e source_host=${PROVISION_SOURCE_HOST} -e target_host=www${PROVISION_ENV_SUFFIX}.${PROVISION_TARGET_DOMAIN_BASE} -e target_domain=${PROVISION_TARGET_DOMAIN_BASE} -e migration_flow.source.domain_base=${PROVISION_SOURCE_DOMAIN_BASE}"

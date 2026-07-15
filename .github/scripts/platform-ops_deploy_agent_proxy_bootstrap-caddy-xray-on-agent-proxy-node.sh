@@ -35,4 +35,4 @@ cat > /tmp/agent-proxy-bootstrap.yml <<'EOF'
         mode: '0644'
 EOF
 ansible-playbook -i ../cmdb/inventory.ini /tmp/agent-proxy-bootstrap.yml \
-  -e "target_host=${{ matrix.host }}"
+  -e "target_host=${MATRIX_HOST}"

@@ -131,6 +131,13 @@ jobs:
         aws_role_arn: ${{ env.AWS_ROLE_ARN }}
 
     - name: Setup Terraform CLI Args
+      env:
+        VAULT_TF_STATE_BUCKET: ${{ steps.vault.outputs.TF_STATE_BUCKET }}
+        VAULT_TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
+        VAULT_TF_STATE_SECRET_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+        VAULT_TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+        MATRIX_COMPONENT: ${{ matrix.component }}
+        VAULT_TF_STATE_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
       run: |-
         .github/scripts/iac-pipeline-multi-cloud-resources-matrix_terraform_setup-terraform-cli-args.sh
 
