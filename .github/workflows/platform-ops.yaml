@@ -92,13 +92,13 @@ on:
         default: false
         type: boolean
       vault_env_path:
-        description: "Vault 环境路径 (如 sit, nat, prod)，用于动态 secrets 的读写"
+        description: "Vault 环境路径 (如 sit, uat, prod)，用于动态 secrets 的读写"
         required: true
-        default: "nat"
+        default: "uat"
         type: choice
         options:
           - sit
-          - nat
+          - uat
           - prod
       vault_addr:
         description: "Vault 服务地址 (可选，覆盖默认的 https://vault.svc.plus)"
@@ -121,14 +121,14 @@ env:
   VAULT_ADDR: ${{ github.event.inputs.vault_addr || 'https://vault.svc.plus' }}
   # Push events do not have workflow_dispatch inputs. Keep manual runs
   # configurable, while deriving a stable environment for release refs.
-  DEPLOY_ENV: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
-  VAULT_ENV_PATH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
-  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
+  DEPLOY_ENV: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
+  VAULT_ENV_PATH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
   VAULT_KV: kv/data/CICD
   VAULT_KV_OPENCLAW: kv/data/openclaw
-  VAULT_KV_WEB_SAAS: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))) && 'kv/data/WEB_SAAS' || (github.event_name == 'workflow_dispatch' && github.event.inputs.vault_env_path == 'prod') && 'kv/data/WEB_SAAS' || format('kv/data/{0}/web-saas', github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || 'sit') || github.event.inputs.vault_env_path) }}
-  VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/databases
-  VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'nat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/agent-proxy
+  VAULT_KV_WEB_SAAS: ${{ (github.event_name == 'push' && (startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))) && 'kv/data/WEB_SAAS' || (github.event_name == 'workflow_dispatch' && github.event.inputs.vault_env_path == 'prod') && 'kv/data/WEB_SAAS' || format('kv/data/{0}/web-saas', github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || 'sit') || github.event.inputs.vault_env_path) }}
+  VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/databases
+  VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/agent-proxy
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
   # 指向 site-migration-toolkit 的 Terraform 目录
   ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/site-migration-toolkit
@@ -193,10 +193,10 @@ jobs:
           else
             case "${GITHUB_REF}" in
               refs/heads/main)
-                deployment_env=nat; resource_file=nat/web-saas; terraform_workspace=web-saas-nat
-                state_key=site-migration-toolkit/nat/web-saas.tfstate; run=true; target_domains=web-saas
+                deployment_env=uat; resource_file=uat/web-saas; terraform_workspace=web-saas-uat
+                state_key=site-migration-toolkit/uat/web-saas.tfstate; run=true; target_domains=web-saas
                 terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=nat.svc.plus; confirm_dns_switch=false
+                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=uat.svc.plus; confirm_dns_switch=false
                 ;;
               refs/heads/release/*|refs/tags/v*)
                 deployment_env=prod; resource_file=prod/web-saas; terraform_workspace=web-saas-prod
