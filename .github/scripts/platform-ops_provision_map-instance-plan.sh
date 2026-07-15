@@ -1,6 +1,6 @@
 #!/bin/bash
-PLAN="${{ github.event.inputs.instance_plan || '4C8G' }}"
-DOMAIN="${{ github.event.inputs.domain || 'all' }}"
+PLAN="${INPUT_INSTANCE_PLAN_____4C8G_}"
+DOMAIN="${INPUT_DOMAIN_____ALL_}"
 
 # agent-proxy 默认使用 1C2G
 if [ "$DOMAIN" == "agent-proxy" ] && [ "$PLAN" == "4C8G" ]; then

@@ -1,2 +1,2 @@
 #!/bin/bash
-make apply CONFIG_DIR=../../../../../${{ env.CONFIG_DIR }}
+make apply CONFIG_DIR=../../../../../${CONFIG_DIR}

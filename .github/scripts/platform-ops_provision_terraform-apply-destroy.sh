@@ -1,3 +1,3 @@
 #!/bin/bash
-terraform workspace select -or-create ${{ steps.route.outputs.terraform_workspace }}
-terraform ${{ steps.route.outputs.terraform_action }} -auto-approve -input=false
+terraform workspace select -or-create ${ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_WORKSPACE}
+terraform ${ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_ACTION} -auto-approve -input=false

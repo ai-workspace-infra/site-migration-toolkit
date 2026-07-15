@@ -1,5 +1,5 @@
 #!/bin/bash
-CONFIG_FILES="gitops/${{ env.PROJECT }}/${{ env.DEPLOY_ENV }}/${{ env.CLOUD_PROVIDER }}/account/bootstrap.yaml"
+CONFIG_FILES="gitops/${PROJECT}/${DEPLOY_ENV}/${CLOUD_PROVIDER}/account/bootstrap.yaml"
 export ACCOUNT_FILE="$CONFIG_FILES"
 python - <<'PY'
 import os
