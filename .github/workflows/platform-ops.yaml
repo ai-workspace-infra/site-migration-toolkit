@@ -150,8 +150,8 @@ jobs:
       env_suffix: ${{ steps.route.outputs.env_suffix }}
       confirm_dns_switch: ${{ steps.route.outputs.confirm_dns_switch }}
       vault_env_path: ${{ steps.route.outputs.vault_env_path }}
-      hosts: ${{ steps.matrix.outputs.hosts }}
-      count: ${{ steps.matrix.outputs.count }}
+      hosts: ${{ steps.matrix.outputs.hosts || '[]' }}
+      count: ${{ steps.matrix.outputs.count || '0' }}
     steps:
       - name: Route ref to an explicit profile
         id: route
@@ -189,9 +189,9 @@ jobs:
             infra_ref="${{ github.event.inputs.infra_ref }}"
             console_ref="${{ github.event.inputs.console_ref }}"
             offline_mode="${{ github.event.inputs.offline_mode }}"
-            source_host="${{ needs.provision.outputs.source_host }}"
-            source_domain_base="${{ needs.provision.outputs.source_domain_base }}"
-            target_domain_base="${{ needs.provision.outputs.target_domain_base }}"
+            source_host="${{ github.event.inputs.source_host }}"
+            source_domain_base="${{ github.event.inputs.source_domain_base }}"
+            target_domain_base="${{ github.event.inputs.target_domain_base }}"
             confirm_dns_switch="${{ github.event.inputs.confirm_dns_switch }}"
           else
             case "${GITHUB_REF}" in
@@ -550,7 +550,7 @@ jobs:
         run: |
           set -euo pipefail
           for key in BILLING_DATABASE_URL INTERNAL_SERVICE_TOKEN GHCR_USERNAME GHCR_PASSWORD ACCOUNT_PG_PASSWORD POSTGRES_ROOT_PASSWORD; do
-            if [ -z "${!key}" ]; then
+            if [ -z "${!key:-}" ]; then
               echo "Required web-saas secret $key is absent for ${DEPLOY_ENV}." >&2
               exit 1
             fi
