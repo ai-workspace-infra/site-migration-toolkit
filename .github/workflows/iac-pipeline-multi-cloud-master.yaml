@@ -72,6 +72,7 @@ jobs:
         .github/scripts/iac-pipeline-multi-cloud-master_prepare-matrix_step-0.sh
 
   landingzone:
+    needs: prepare-matrix
     if: ${{ inputs.run_landingzone != false }}
     uses: ./.github/workflows/iac-pipeline-multi-cloud-landingzone-baseline.yaml
     with:
