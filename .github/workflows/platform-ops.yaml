@@ -313,7 +313,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
           TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
         run: |
-          terraform workspace select ${{ steps.route.outputs.terraform_workspace }} || terraform workspace new ${{ steps.route.outputs.terraform_workspace }}
+          terraform workspace select -or-create ${{ steps.route.outputs.terraform_workspace }}
           terraform ${{ steps.route.outputs.terraform_action }} -auto-approve -input=false
 
       - name: generate.py inventory
