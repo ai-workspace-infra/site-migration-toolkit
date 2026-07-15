@@ -258,7 +258,6 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
         AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
         TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
-      env:
         ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_ACTION: ${{ steps.route.outputs.terraform_action }}
         ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_WORKSPACE: ${{ steps.route.outputs.terraform_workspace }}
       run: |-
@@ -509,7 +508,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_bootstrap-docker-caddy-shared-network-stunnel-certs.sh
@@ -552,7 +550,6 @@ jobs:
       env:
         GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_docker_login_ghcr.sh
@@ -648,7 +645,6 @@ jobs:
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
         INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
-      env:
         PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
         PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
         MATRIX_HOST: ${{ matrix.host }}
@@ -674,7 +670,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-vault-co-located-on-web-saas.sh
@@ -767,7 +762,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_bootstrap-docker-caddy-shared-network.sh
@@ -807,7 +801,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
@@ -819,7 +812,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
@@ -831,7 +823,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-gitea.sh
@@ -853,7 +844,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-observability-server-stack-victoriametrics-grafana.sh
@@ -865,7 +855,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         VAULT_ANSIBLE_SSH_KEY_B64: ${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}
         PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
         PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
@@ -946,7 +935,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_bootstrap-caddy-xray-on-agent-proxy-node.sh
@@ -960,7 +948,6 @@ jobs:
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
         XRAY_UUID: ${{ steps.vault.outputs.XRAY_UUID }}
-      env:
         PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
         PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
         MATRIX_HOST: ${{ matrix.host }}
@@ -976,7 +963,6 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
-      env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_deploy-xray-exporter.sh
@@ -992,7 +978,6 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      env:
         PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
         PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
         MATRIX_HOST: ${{ matrix.host }}
@@ -1119,7 +1104,6 @@ jobs:
     - name: Switch Cloudflare DNS Records
       env:
         CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
-      env:
         PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
         PROVISION_SOURCE_DOMAIN_BASE: ${{ needs.provision.outputs.source_domain_base }}
         INPUT_RUN_PROVISION_AND_DEPLOY: ${{ github.event.inputs.run_provision_and_deploy }}
