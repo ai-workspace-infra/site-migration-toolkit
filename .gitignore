@@ -1,1 +1,7 @@
 docs/ZH/.DS_Store
+
+fix_domains_and_vault.py
+fix_nat.py
+fix_policy.py
+fix_vault.py
+merge_actions.py
