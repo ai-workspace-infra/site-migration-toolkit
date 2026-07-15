@@ -1,0 +1,101 @@
+name: Multi Cloud Master Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_action:
+        description: "Deployment action"
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+      run_landingzone:
+        description: "Run LandingZone Baseline"
+        type: boolean
+        default: true
+      run_account:
+        description: "Run Account Matrix"
+        type: boolean
+        default: true
+      run_resources:
+        description: "Run Resources Matrix"
+        type: boolean
+        default: true
+      project:
+        description: "环境(项目) / Project (Base Domain, e.g. svc.plus, onwalk.net)"
+        type: string
+        default: svc.plus
+      vault_env_path:
+        description: "环境 / Vault Environment (e.g. sit, uat, prod)"
+        type: choice
+        options: [sit, uat, prod]
+        default: sit
+      cloud_provider:
+        description: "服务商 / Cloud Provider"
+        type: choice
+        options: [aws-cloud, gcp-cloud, vultr-vps]
+        default: aws-cloud
+      accounts_components:
+        description: "账号层级组件选择 (逗号分隔)"
+        type: string
+        default: 'vpc,role'
+      resources_components:
+        description: "资源层级组件选择 (逗号分隔)"
+        type: string
+        default: 's3,ec2'
+      gitops_repo_name:
+        description: "GitOps repository (URL or owner/repo)"
+        type: string
+        default: https://github.com/cloud-neutral-workshop/gitops.git
+      gitops_repo_ref:
+        description: "GitOps repo ref (branch/tag/sha) to use"
+        type: string
+        default: main
+
+jobs:
+  landingzone:
+    if: ${{ inputs.run_landingzone != false }}
+    uses: ./.github/workflows/iac-pipeline-multi-cloud-landingzone-baseline.yaml
+    with:
+      deploy_action: ${{ inputs.deploy_action || 'apply' }}
+      project: ${{ inputs.project || 'xzerolab' }}
+      vault_env_path: ${{ inputs.vault_env_path || 'uat' }}
+      cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
+      gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
+      gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
+    secrets: inherit
+
+  account:
+    needs: landingzone
+    if: |
+      always() && 
+      (inputs.run_account != false) &&
+      (needs.landingzone.result == 'success' || needs.landingzone.result == 'skipped')
+    uses: ./.github/workflows/iac-pipeline-multi-cloud-account-matrix.yaml
+    with:
+      deploy_action: ${{ inputs.deploy_action || 'apply' }}
+      project: ${{ inputs.project || 'xzerolab' }}
+      vault_env_path: ${{ inputs.vault_env_path || 'uat' }}
+      cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
+      components: ${{ inputs.accounts_components || 'vpc,role' }}
+      gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
+      gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
+    secrets: inherit
+
+  resources:
+    needs: account
+    if: |
+      always() && 
+      (inputs.run_resources != false) &&
+      (needs.account.result == 'success' || needs.account.result == 'skipped')
+    uses: ./.github/workflows/iac-pipeline-multi-cloud-resources-matrix.yaml
+    with:
+      deploy_action: ${{ inputs.deploy_action || 'apply' }}
+      project: ${{ inputs.project || 'xzerolab' }}
+      vault_env_path: ${{ inputs.vault_env_path || 'uat' }}
+      cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
+      components: ${{ inputs.resources_components || 's3,ec2' }}
+      gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
+      gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
+    secrets: inherit
