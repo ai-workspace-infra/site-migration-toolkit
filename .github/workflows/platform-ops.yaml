@@ -12,10 +12,10 @@ on:
   # an isolated UAT web-saas environment; stable refs select production.
   push:
     branches:
-      - main
-      - 'release/**'
+    - main
+    - 'release/**'
     tags:
-      - 'v*'
+    - 'v*'
   workflow_dispatch:
     inputs:
       infra_ref:
@@ -60,20 +60,20 @@ on:
         default: "all"
         type: choice
         options:
-          - all
-          - ai-workspace
-          - web-saas
-          - infra-platform
-          - agent-proxy
+        - all
+        - ai-workspace
+        - web-saas
+        - infra-platform
+        - agent-proxy
       instance_plan:
         description: "选择 VPS 规格 (全域建议 4C8G，单域支持 2C4G 矩阵，agent-proxy 默认 1C2G)"
         required: true
         default: "4C8G"
         type: choice
         options:
-          - 4C8G
-          - 2C4G
-          - 1C2G
+        - 4C8G
+        - 2C4G
+        - 1C2G
       action:
         description: "执行动作 (deploy:仅部署服务 | destroy:销毁 | migrate/backup/restore:数据操作)"
         required: true
@@ -91,9 +91,9 @@ on:
         default: "uat"
         type: choice
         options:
-          - sit
-          - uat
-          - prod
+        - sit
+        - uat
+        - prod
       vault_addr:
         description: "Vault 服务地址 (可选，覆盖默认的 https://vault.svc.plus)"
         required: false
@@ -153,240 +153,131 @@ jobs:
       hosts: ${{ steps.matrix.outputs.hosts || '[]' }}
       count: ${{ steps.matrix.outputs.count || '0' }}
     steps:
-      - name: Route ref to an explicit profile
-        id: route
-        run: |
-          set -euo pipefail
-          # Defaults are intentionally safe: no branch deployment reads a host
-          # variable. Terraform creates the host and its CMDB is the only deploy
-          # inventory for that run.
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            deployment_env="${{ github.event.inputs.vault_env_path }}"
-            target_domains="${{ needs.provision.outputs.target_domains }}"
-            
-            if [ "${deployment_env}" = "sit" ] && [ "${target_domains}" = "all" ]; then
-              rf="all-in-one"
-            elif [ "${target_domains}" = "all" ]; then
-              rf="web-saas"
-            else
-              rf="${target_domains}"
-            fi
-            
-            resource_file="${deployment_env}/${rf}"
-            terraform_workspace="${rf}-${deployment_env}"
-            state_key="platform-ops-toolkit/${deployment_env}/${rf}.tfstate"
-            run="${{ github.event.inputs.run_provision_and_deploy }}"
-            
-            user_action="${{ github.event.inputs.action }}"
-            if [ "$user_action" = "destroy" ]; then
-              terraform_action="destroy"
-              toolkit_action="none"
-            else
-              terraform_action="apply"
-              toolkit_action="$user_action"
-            fi
-            
-            infra_ref="${{ github.event.inputs.infra_ref }}"
-            console_ref="${{ github.event.inputs.console_ref }}"
-            offline_mode="${{ github.event.inputs.offline_mode }}"
-            source_host="${{ github.event.inputs.source_host }}"
-            source_domain_base="${{ github.event.inputs.source_domain_base }}"
-            target_domain_base="${{ github.event.inputs.target_domain_base }}"
-            confirm_dns_switch="${{ github.event.inputs.confirm_dns_switch }}"
-          else
-            case "${GITHUB_REF}" in
-              refs/heads/main)
-                deployment_env=uat; resource_file=uat/web-saas; terraform_workspace=web-saas-uat
-                state_key=platform-ops-toolkit/uat/web-saas.tfstate; run=true; target_domains=web-saas
-                terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-uat; confirm_dns_switch=false
-                ;;
-              refs/heads/release/*|refs/tags/v*)
-                deployment_env=prod; resource_file=prod/web-saas; terraform_workspace=web-saas-prod
-                state_key=platform-ops-toolkit/prod/web-saas.tfstate; run=true; target_domains=web-saas
-                terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=onwalk.net; env_suffix=""; confirm_dns_switch=false
-                ;;
-              *)
-                deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
-                state_key=platform-ops-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
-                terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-                source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-sit; confirm_dns_switch=false
-                ;;
-            esac
-          fi
-          for key in deployment_env resource_file terraform_workspace state_key run target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch; do
-            value="${!key:-}"
-            case "$key" in run) echo "run_provision_and_deploy=$value" ;; *) echo "$key=$value" ;; esac >> "$GITHUB_OUTPUT"
-          done
-          echo "vault_env_path=${deployment_env}" >> "$GITHUB_OUTPUT"
+    - name: Route ref to an explicit profile
+      id: route
+      run: |-
+        .github/scripts/platform-ops_provision_route-ref-to-an-explicit-profile.sh
 
-      - name: Load Vault secrets
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          exportToken: true
-          secrets: |
-            ${{ env.VAULT_KV }} VULTR_API_KEY | VULTR_API_KEY ;
-            ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
-            ${{ env.VAULT_KV }} TF_STATE_BUCKET | TF_STATE_BUCKET ;
-            ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
-            ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
-            ${{ env.VAULT_KV }} TF_STATE_REGION | TF_STATE_REGION
+    - name: Load Vault secrets
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+        token: ${{ github.event.inputs.vault_token }}
+        role: ${{ env.VAULT_ROLE }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        exportToken: true
+        secrets: |
+          ${{ env.VAULT_KV }} VULTR_API_KEY | VULTR_API_KEY ;
+          ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
+          ${{ env.VAULT_KV }} TF_STATE_BUCKET | TF_STATE_BUCKET ;
+          ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
+          ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
+          ${{ env.VAULT_KV }} TF_STATE_REGION | TF_STATE_REGION
 
-      - name: Checkout iac_modules
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-infra/iac_modules
-          ref: ${{ steps.route.outputs.infra_ref }}
-          path: infra/iac_modules
+    - name: Checkout iac_modules
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-infra/iac_modules
+        ref: ${{ steps.route.outputs.infra_ref }}
+        path: infra/iac_modules
 
-      - uses: hashicorp/setup-terraform@v3
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        with:
-          terraform_version: "1.9.8"
+    - uses: hashicorp/setup-terraform@v3
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      with:
+        terraform_version: "1.9.8"
 
-      - uses: actions/setup-python@v6
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        with:
-          python-version: "3.12"
+    - uses: actions/setup-python@v6
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      with:
+        python-version: "3.12"
 
-      - name: Install render deps
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        run: pip install --quiet pyyaml jinja2
+    - name: Install render deps
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      run: .github/scripts/platform-ops_provision_install-render-deps.sh
 
-      - name: Map Instance Plan
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        id: plan
-        run: |
-          PLAN="${{ github.event.inputs.instance_plan || '4C8G' }}"
-          DOMAIN="${{ github.event.inputs.domain || 'all' }}"
-          
-          # agent-proxy 默认使用 1C2G
-          if [ "$DOMAIN" == "agent-proxy" ] && [ "$PLAN" == "4C8G" ]; then
-            PLAN="1C2G"
-          fi
+    - name: Map Instance Plan
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      id: plan
+      run: |-
+        .github/scripts/platform-ops_provision_map-instance-plan.sh
 
-          if [ "$PLAN" == "1C2G" ]; then
-            echo "api=vc2-1c-2gb" >> "$GITHUB_OUTPUT"
-          elif [ "$PLAN" == "2C4G" ]; then
-            echo "api=vc2-2c-4gb" >> "$GITHUB_OUTPUT"
-          else
-            echo "api=vc2-4c-8gb" >> "$GITHUB_OUTPUT"
-          fi
+    - name: generate.py render
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      working-directory: ${{ env.VPS_ROOT }}
+      env:
+        TARGET_DOMAIN: ${{ steps.route.outputs.target_domains }}
+        INSTANCE_PLAN_API: ${{ steps.plan.outputs.api }}
+        TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
+        TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+        TF_WORKSPACE_PREFIX: env
+        TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
+      run: python3 scripts/generate.py render --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
-      - name: generate.py render
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        working-directory: ${{ env.VPS_ROOT }}
-        env:
-          TARGET_DOMAIN: ${{ steps.route.outputs.target_domains }}
-          INSTANCE_PLAN_API: ${{ steps.plan.outputs.api }}
-          TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
-          TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
-          TF_WORKSPACE_PREFIX: env
-          TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
-        run: python3 scripts/generate.py render --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
+    - name: Terraform init
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      working-directory: ${{ env.ENV_DIR }}
+      env:
+        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+        TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
+        TF_STATE_BUCKET: ${{ steps.vault.outputs.TF_STATE_BUCKET }}
+        TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+      run: |-
+        .github/scripts/platform-ops_provision_terraform-init.sh
 
-      - name: Terraform init
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        working-directory: ${{ env.ENV_DIR }}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-          TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
-          TF_STATE_BUCKET: ${{ steps.vault.outputs.TF_STATE_BUCKET }}
-          TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
-        run: |
-          terraform init -input=false \
-            -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=${{ steps.route.outputs.state_key }}"
+    - name: Terraform Apply / Destroy
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      working-directory: ${{ env.ENV_DIR }}
+      env:
+        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+        TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
+      run: |-
+        .github/scripts/platform-ops_provision_terraform-apply-destroy.sh
 
-      - name: Terraform Apply / Destroy
-        if: steps.route.outputs.run_provision_and_deploy == 'true'
-        working-directory: ${{ env.ENV_DIR }}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-          TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
-        run: |
-          terraform workspace select -or-create ${{ steps.route.outputs.terraform_workspace }}
-          terraform ${{ steps.route.outputs.terraform_action }} -auto-approve -input=false
+    - name: generate.py inventory
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      working-directory: ${{ env.VPS_ROOT }}
+      env:
+        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+        TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
+      run: python3 scripts/generate.py inventory --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
-      - name: generate.py inventory
-        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
-        working-directory: ${{ env.VPS_ROOT }}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-          TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
-        run: python3 scripts/generate.py inventory --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
+    - name: Build deploy matrix
+      id: matrix
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      working-directory: ${{ env.ENV_DIR }}
+      run: |-
+        .github/scripts/platform-ops_provision_build-deploy-matrix.sh
 
-      - name: Build deploy matrix
-        id: matrix
-        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
-        working-directory: ${{ env.ENV_DIR }}
-        run: |
-          hosts="$(jq -c 'keys' cmdb.json)"
-          echo "hosts=${hosts}" >> "$GITHUB_OUTPUT"
-          echo "count=$(jq 'length' cmdb.json)" >> "$GITHUB_OUTPUT"
+    - name: Upload CMDB artifact
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      uses: actions/upload-artifact@v7
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: |
+          ${{ env.ENV_DIR }}/cmdb.json
+          ${{ env.ENV_DIR }}/inventory.ini
 
-      - name: Upload CMDB artifact
-        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
-        uses: actions/upload-artifact@v7
-        with:
-          name: platform-ops-toolkit-cmdb
-          path: |
-            ${{ env.ENV_DIR }}/cmdb.json
-            ${{ env.ENV_DIR }}/inventory.ini
+    - name: Initialize Databases Credentials
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      env:
+        VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
+      run: |-
+        .github/scripts/platform-ops_provision_initialize-databases-credentials.sh
 
-      - name: Initialize Databases Credentials
-        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
-        env:
-          VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
-        run: |
-          URL="${VAULT_ADDR}/v1/kv/data/${VAULT_ENV_PATH}/databases"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Vault-Token: $VAULT_TOKEN" "$URL")
-          if [ "$STATUS" = "404" ]; then
-            echo "Initializing databases credentials..."
-            PAYLOAD=$(jq -n \
-              --arg postgres_root_password "$(openssl rand -base64 16)" \
-              --arg account_pg_password "$(openssl rand -base64 16)" \
-              --arg litellm_pg_password "$(openssl rand -base64 16)" \
-              --arg rag_pg_password "$(openssl rand -base64 16)" \
-              --arg zitadel_pg_password "$(openssl rand -base64 16)" \
-              --arg gitea_pg_password "$(openssl rand -base64 16)" \
-              --arg vault_pg_password "$(openssl rand -base64 16)" \
-              --arg billing_pg_password "$(openssl rand -base64 16)" \
-              '{data: {postgres_root_password: $postgres_root_password, account_pg_password: $account_pg_password, litellm_pg_password: $litellm_pg_password, rag_pg_password: $rag_pg_password, zitadel_pg_password: $zitadel_pg_password, gitea_pg_password: $gitea_pg_password, vault_pg_password: $vault_pg_password, billing_pg_password: $billing_pg_password}}')
-            curl -sS -X POST -H "X-Vault-Token: $VAULT_TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL"
-          else
-            echo "Credentials already exist (Status: $STATUS). Skipping."
-          fi
-
-      - name: Initialize Agent Proxy Credentials
-        if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
-        env:
-          VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
-        run: |
-          URL="${VAULT_ADDR}/v1/kv/data/${VAULT_ENV_PATH}/agent-proxy"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Vault-Token: $VAULT_TOKEN" "$URL")
-          if [ "$STATUS" = "404" ]; then
-            echo "Initializing agent proxy credentials..."
-            PAYLOAD=$(jq -n \
-              --arg xray_uuid "$(uuidgen)" \
-              '{data: {xray_uuid: $xray_uuid}}')
-            curl -sS -X POST -H "X-Vault-Token: $VAULT_TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD" "$URL"
-          else
-            echo "Credentials already exist (Status: $STATUS). Skipping."
-          fi
+    - name: Initialize Agent Proxy Credentials
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      env:
+        VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
+      run: |-
+        .github/scripts/platform-ops_provision_initialize-agent-proxy-credentials.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 2: 基础环境安装 (Bootstrap Deploy)
@@ -403,74 +294,63 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
-      - name: Checkout xworkspace-console helpers
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-lab/xworkspace-console
-          ref: ${{ needs.provision.outputs.console_ref || 'main' }}
+    - name: Checkout xworkspace-console helpers
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-lab/xworkspace-console
+        ref: ${{ needs.provision.outputs.console_ref || 'main' }}
 
-      - name: Download CMDB
-        uses: actions/download-artifact@v8
-        with:
-          name: platform-ops-toolkit-cmdb
-          path: cmdb
+    - name: Download CMDB
+      uses: actions/download-artifact@v8
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: cmdb
 
-      - name: Check if host belongs to ai_workspace group
-        id: group_check
-        run: |
-          in_group="$(jq -r '.["${{ matrix.host }}"].groups | contains(["ai_workspace"])' cmdb/cmdb.json)"
-          echo "in_group=${in_group}" >> "$GITHUB_OUTPUT"
+    - name: Check if host belongs to ai_workspace group
+      id: group_check
+      run: |-
+        .github/scripts/platform-ops_deploy_base_check-if-host-belongs-to-ai-workspace-group.sh
 
-      - name: Load Vault secrets
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          secrets: |
-            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-            ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN
+    - name: Load Vault secrets
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+        token: ${{ github.event.inputs.vault_token }}
+        role: ${{ env.VAULT_ROLE }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        secrets: |
+          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN
 
-      - name: Configure SSH Key
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
+    - name: Configure SSH Key
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_base_configure-ssh-key.sh
 
-      - name: Wait for host SSH
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          for _ in $(seq 1 60); do
-            if nc -z -w 5 "$ip" 22; then exit 0; fi
-            sleep 10
-          done
-          exit 1
+    - name: Wait for host SSH
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_base_wait-for-host-ssh.sh
 
-      - name: Patch run-on-host-bootstrap.sh
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          sed -i 's/OLLAMA_API_KEY:-}"/OLLAMA_API_KEY:-}"\n  printf '"'"'BRANCH=%q\\n'"'"' "${INFRA_REF:-main}"/' scripts/run-on-host-bootstrap.sh
-          sed -i 's/export .* OLLAMA_API_KEY/& BRANCH/' scripts/run-on-host-bootstrap.sh
-          sed -i 's|/ai-workspace |/ai-workspace/${BRANCH:-main} |' scripts/run-on-host-bootstrap.sh
+    - name: Patch run-on-host-bootstrap.sh
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_base_patch-run-on-host-bootstrap-sh.sh
 
-      - name: Run on-host bootstrap
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        env:
-          MATRIX_HOST: ${{ matrix.host }}
-          CMDB_PATH: cmdb/cmdb.json
-          SSH_KEY_PATH: ~/.ssh/id_deploy
-          AI_WORKSPACE_OFFLINE_MODE: ${{ needs.provision.outputs.offline_mode || 'off' }}
-          AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
-          INFRA_REF: ${{ needs.provision.outputs.infra_ref }}
-        run: bash scripts/run-on-host-bootstrap.sh
+    - name: Run on-host bootstrap
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      env:
+        MATRIX_HOST: ${{ matrix.host }}
+        CMDB_PATH: cmdb/cmdb.json
+        SSH_KEY_PATH: ~/.ssh/id_deploy
+        AI_WORKSPACE_OFFLINE_MODE: ${{ needs.provision.outputs.offline_mode || 'off' }}
+        AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
+        INFRA_REF: ${{ needs.provision.outputs.infra_ref }}
+      run: .github/scripts/platform-ops_deploy_base_run-on-host-bootstrap.sh
 
 
   # ---------------------------------------------------------------------------
@@ -494,163 +374,110 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
-      - name: Checkout playbooks
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-infra/playbooks
-          ref: ${{ needs.provision.outputs.infra_ref }}
-          path: playbooks
+    - name: Checkout playbooks
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-infra/playbooks
+        ref: ${{ needs.provision.outputs.infra_ref }}
+        path: playbooks
 
-      - name: Checkout billing-service
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-services/billing-service
-          ref: main
-          path: billing-service
+    - name: Checkout billing-service
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-services/billing-service
+        ref: main
+        path: billing-service
 
-      - name: Download CMDB
-        uses: actions/download-artifact@v8
-        with:
-          name: platform-ops-toolkit-cmdb
-          path: cmdb
+    - name: Download CMDB
+      uses: actions/download-artifact@v8
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: cmdb
 
-      - name: Check if host belongs to web_saas group
-        id: group_check
-        run: |
-          in_group="$(jq -r '.["${{ matrix.host }}"].groups | contains(["web_saas"])' cmdb/cmdb.json)"
-          echo "in_group=${in_group}" >> "$GITHUB_OUTPUT"
+    - name: Check if host belongs to web_saas group
+      id: group_check
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_check-if-host-belongs-to-web-saas-group.sh
 
-      - name: Load Vault secrets
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          secrets: |
-            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-            ${{ env.VAULT_KV_WEB_SAAS }} BILLING_DATABASE_URL | BILLING_DATABASE_URL ;
-            ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
-            ${{ env.VAULT_KV_WEB_SAAS }} GHCR_USERNAME | GHCR_USERNAME ;
-            ${{ env.VAULT_KV_WEB_SAAS }} GHCR_PASSWORD | GHCR_PASSWORD ;
-            ${{ env.VAULT_KV_WEB_SAAS }} ACCOUNT_DB_PASSWORD | ACCOUNT_PG_PASSWORD ;
-            ${{ env.VAULT_KV_WEB_SAAS }} POSTGRES_ROOT_PASSWORD | POSTGRES_ROOT_PASSWORD
+    - name: Load Vault secrets
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+        token: ${{ github.event.inputs.vault_token }}
+        role: ${{ env.VAULT_ROLE }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        secrets: |
+          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_WEB_SAAS }} BILLING_DATABASE_URL | BILLING_DATABASE_URL ;
+          ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
+          ${{ env.VAULT_KV_WEB_SAAS }} GHCR_USERNAME | GHCR_USERNAME ;
+          ${{ env.VAULT_KV_WEB_SAAS }} GHCR_PASSWORD | GHCR_PASSWORD ;
+          ${{ env.VAULT_KV_WEB_SAAS }} ACCOUNT_DB_PASSWORD | ACCOUNT_PG_PASSWORD ;
+          ${{ env.VAULT_KV_WEB_SAAS }} POSTGRES_ROOT_PASSWORD | POSTGRES_ROOT_PASSWORD
 
-      - name: Validate environment-scoped web-saas secrets
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        env:
-          BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
-          INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
-          GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-          GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
-          POSTGRES_ROOT_PASSWORD: ${{ steps.vault.outputs.POSTGRES_ROOT_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for key in BILLING_DATABASE_URL INTERNAL_SERVICE_TOKEN GHCR_USERNAME GHCR_PASSWORD ACCOUNT_PG_PASSWORD POSTGRES_ROOT_PASSWORD; do
-            if [ -z "${!key:-}" ]; then
-              echo "Required web-saas secret $key is absent for ${DEPLOY_ENV}." >&2
-              exit 1
-            fi
-          done
+    - name: Validate environment-scoped web-saas secrets
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      env:
+        BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
+        INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
+        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
+        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+        ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
+        POSTGRES_ROOT_PASSWORD: ${{ steps.vault.outputs.POSTGRES_ROOT_PASSWORD }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_validate-environment-scoped-web-saas-secrets.sh
 
-      - name: Configure SSH Key
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
+    - name: Configure SSH Key
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_configure-ssh-key.sh
 
-      - name: Wait for host SSH
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          for _ in $(seq 1 60); do
-            if nc -z -w 5 "$ip" 22; then exit 0; fi
-            sleep 10
-          done
-          exit 1
+    - name: Wait for host SSH
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_wait-for-host-ssh.sh
 
-      - name: Install Ansible
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: pip install --quiet ansible
+    - name: Install Ansible
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: .github/scripts/platform-ops_deploy_web_saas_install-ansible.sh
 
-      - name: Set up Go
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.25"
+    - name: Set up Go
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      uses: actions/setup-go@v6
+      with:
+        go-version: "1.25"
 
-      - name: Build billing-service binary
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: billing-service
-        env:
-          CGO_ENABLED: "0"
-          GOOS: linux
-          GOARCH: amd64
-        run: |
-          go build -buildvcs=false -o dist/billing-service-linux-amd64 ./cmd/billing-service
-          chmod 0755 dist/billing-service-linux-amd64
+    - name: Build billing-service binary
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: billing-service
+      env:
+        CGO_ENABLED: "0"
+        GOOS: linux
+        GOARCH: amd64
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_build-billing-service-binary.sh
 
-      - name: Bootstrap Docker + Caddy + shared network + stunnel certs
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          cat > /tmp/web-saas-bootstrap.yml <<'EOF'
-          - name: Ensure Docker engine, Caddy, shared network, and stunnel certs exist
-            hosts: "{{ target_host }}"
-            become: true
-            gather_facts: true
-            roles:
-              - roles/vhosts/docker
-              # accounts/console 角色只往 conf.d 写 fragment 并 reload caddy
-              # 服务, 它们假设 Caddy 本体已经安装; 全新主机需要在这里装好
-              - roles/vhosts/caddy
-              - roles/host/stunnel-certs
-            tasks:
-              # 早期 run 渲染 of fragment 用 {$SERVED_DOMAINS} 环境变量占位符做
-              # 站点键, systemd 下展开为空键, 会让后续所有服务的 caddy validate
-              # 失败; 各服务角色的清理只清自己且跑得太晚, 在这里统一清掉
-              - name: Remove stale Caddy fragments keyed on env placeholders
-                ansible.builtin.shell: |
-                  set -euo pipefail
-                  stale="$(grep -l '{\$SERVED_DOMAINS}' /etc/caddy/conf.d/*.caddy 2>/dev/null || true)"
-                  if [ -n "${stale}" ]; then
-                    rm -f ${stale}
-                    echo "removed: ${stale}"
-                  fi
-                args:
-                  executable: /bin/bash
-                register: stale_caddy_fragments
-                changed_when: stale_caddy_fragments.stdout | trim != ""
-              - name: Check for cn-toolkit-shared Docker network
-                ansible.builtin.command: docker network inspect cn-toolkit-shared
-                register: shared_network_inspect
-                changed_when: false
-                failed_when: false
-              - name: Create cn-toolkit-shared Docker network when missing
-                ansible.builtin.command: docker network create cn-toolkit-shared
-                when: shared_network_inspect.rc != 0
-          EOF
-          ansible-playbook -i ../cmdb/inventory.ini /tmp/web-saas-bootstrap.yml \
-            -e "target_host=${{ matrix.host }}"
+    - name: Bootstrap Docker + Caddy + shared network + stunnel certs
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_bootstrap-docker-caddy-shared-network-stunnel-certs.sh
 
-      - name: Checkout postgresql.svc.plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-services/postgresql.svc.plus
-          ref: main
-          path: postgresql-svc-plus
+    - name: Checkout postgresql.svc.plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-services/postgresql.svc.plus
+        ref: main
+        path: postgresql-svc-plus
 
       # postgresql_service 角色默认假设 postgres-extensions:17 这个镜像已经在目标
       # 主机本地存在 (postgresql_service_postgres_pull_image 默认 false)。这不是
@@ -660,63 +487,48 @@ jobs:
       # Docker Hub 拉 "postgres-extensions" 从而 404/403。
       # 在 runner 上构建一次 (跟 billing-service 二进制同一个思路: 自己编译,
       # 不依赖外部产物), 再用 docker save | ssh docker load 灌进目标主机。
-      - name: Build postgres-extensions image
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: postgresql-svc-plus
-        run: make build-postgres-image POSTGRES_IMAGE_NAME=postgres-extensions POSTGRES_IMAGE_TAG=17
+    - name: Build postgres-extensions image
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: postgresql-svc-plus
+      run: .github/scripts/platform-ops_deploy_web_saas_build-postgres-extensions-image.sh
 
-      - name: Ship postgres-extensions image to host
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
-          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
-          docker save postgres-extensions:17 | gzip \
-            | ssh "${ssh_opts[@]}" "${user}@${ip}" 'gunzip | docker load'
+    - name: Ship postgres-extensions image to host
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_ship-postgres-extensions-image-to-host.sh
 
       # postgresql_service 角色的 stunnel 端镜像 ghcr.io/x-evor/stunnel-server
       # 是 GHCR 私有包 (镜像源码已收编进 x-evor/artifacts oci/stunnel-server,
       # 由其 CI 构建发布), 全新主机没有登录态, compose up 隐式 pull 直接
       # unauthorized。在目标主机上先用 WEB_SAAS 的 GHCR 凭据 docker login,
       # 之后 stunnel / accounts 等私有镜像的拉取都能通过。
-      - name: Log target host into GHCR
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        env:
-          GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-          GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
-          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
-          printf '%s' "$GHCR_PASSWORD" \
-            | ssh "${ssh_opts[@]}" "${user}@${ip}" \
-                "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+    - name: Log target host into GHCR
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      env:
+        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
+        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_log-target-host-into-ghcr.sh
 
-      - name: Deploy postgresql.svc.plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          jq -n --arg pw "$POSTGRES_ROOT_PASSWORD" \
-            '{postgresql_service_postgres_env_defaults: {POSTGRES_USER: "postgres", POSTGRES_PASSWORD: $pw, POSTGRES_DB: "postgres", PG_LOCAL_PORT: "5432", PG_MAJOR: "17", PG_DATA_PATH: "/data"}}' \
-            > /tmp/postgres-env-vars.json
-          ansible-playbook -i ../cmdb/inventory.ini deploy_postgresql_svc_plus.yml \
-            -e "postgresql_service_hosts=${{ matrix.host }}" \
-            -e @/tmp/postgres-env-vars.json
+    - name: Deploy postgresql.svc.plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_deploy-postgresql-svc-plus.sh
 
-      - name: Deploy stunnel-client
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_stunnel-client.yml \
-            -e "stunnel_client_hosts=${{ matrix.host }}"
+    - name: Deploy stunnel-client
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_deploy-stunnel-client.sh
 
       # web-saas 主机跑的是自己独立的 postgres 实例 (与 infra-platform 的
       # postgres 是两台不同主机), 这台上的 account/litellm/rag 等库和专属
@@ -732,140 +544,92 @@ jobs:
       # (kv/data/WEB_SAAS, 上面 "Load Vault secrets" 已经安全取出) 作为 Env
       # 层显式传入, 建库和 accounts 容器两边用同一个值, 完全不依赖 Vault
       # 读写是否打通。
-      - name: Provision account database and role
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
-            --limit "${{ matrix.host }}"
+    - name: Provision account database and role
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_provision-account-database-and-role.sh
 
-      - name: Checkout accounts.svc.plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-services/accounts.svc.plus
-          ref: main
-          path: accounts-svc-plus
+    - name: Checkout accounts.svc.plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-services/accounts.svc.plus
+        ref: main
+        path: accounts-svc-plus
 
       # deploy-only 模式不做数据迁移, 全新 account 库没有任何表, accounts
       # 服务启动即 "relation users does not exist" 崩溃循环。schema.sql 是
       # drop+recreate 的基线, 只允许在 users 表不存在时初始化一次, 绝不能
       # 在已有数据的库上重跑。
-      - name: Initialize account schema when absent
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
-          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
-          
-          # Ensure 'account' database exists
-          ssh "${ssh_opts[@]}" "${user}@${ip}" \
-            "docker exec -i postgresql psql -U postgres -tc \"SELECT 1 FROM pg_database WHERE datname = 'account'\" | grep -q 1 || docker exec -i postgresql psql -U postgres -c 'CREATE DATABASE account;'"
-          
-          pg="docker exec -i postgresql psql -U postgres -d account"
-          has_users="$(ssh "${ssh_opts[@]}" "${user}@${ip}" \
-            "$pg -tAc \"SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'\"" || true)"
-          if [ "${has_users}" = "1" ]; then
-            echo "account schema already present; skipping baseline init"
-          else
-            ssh "${ssh_opts[@]}" "${user}@${ip}" "$pg -v ON_ERROR_STOP=1 -f -" \
-              < accounts-svc-plus/sql/schema.sql
-            echo "account baseline schema applied"
-          fi
+    - name: Initialize account schema when absent
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_initialize-account-schema-when-absent.sh
 
-      - name: Deploy accounts.svc.plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          ACCOUNTS_PULL_IMAGE: "true"
+    - name: Deploy accounts.svc.plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        ACCOUNTS_PULL_IMAGE: "true"
           # ghcr.io/x-evor/accounts 也是私有镜像; accounts_service 角色会读
           # GHCR_USERNAME/GHCR_PASSWORD 在目标主机上 docker login 后再 pull
-          GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-          GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-          ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
-        run: |
-          # 角色默认的 Caddy 站点写死 accounts.svc.plus / svc.plus, 迁移环境
-          # 必须按目标域参数化, 否则 fragment 服务的是源站域名
-          jq -n \
-            --arg site "accounts${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}" \
-            --arg fwd "${{ needs.provision.outputs.target_domain_base }}" \
-            '{accounts_service_caddy_sites: [{server_names: [$site], default_forwarded_host: $fwd, upstream: "127.0.0.1:18081"}]}' \
-            > /tmp/accounts-caddy-vars.json
-          ansible-playbook -i ../cmdb/inventory.ini deploy_accounts_svc_plus.yml \
-            -e "accounts_service_hosts=${{ matrix.host }}" \
-            -e @/tmp/accounts-caddy-vars.json
+        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
+        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+        ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_deploy-accounts-svc-plus.sh
 
-      - name: Deploy billing-service
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
-          INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
-        run: |
-          jq -n \
-            --arg artifact "${{ github.workspace }}/billing-service/dist/billing-service-linux-amd64" \
-            --arg image_ref "ghcr.io/ai-workspace-services/billing-service:${{ github.sha }}" \
-            --arg db_url "$BILLING_DATABASE_URL" \
-            --arg token "$INTERNAL_SERVICE_TOKEN" \
-            --arg hosts "${{ matrix.host }}" \
-            '{billing_service_hosts: $hosts, billing_service_binary_artifact: $artifact, billing_service_image_ref: $image_ref, billing_service_database_url: $db_url, billing_service_internal_service_token: $token}' \
-            > /tmp/billing-service-vars.json
-          ansible-playbook -i ../cmdb/inventory.ini deploy_billing_service.yml \
-            -e @/tmp/billing-service-vars.json
+    - name: Deploy billing-service
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
+        INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_deploy-billing-service.sh
 
-      - name: Deploy console.svc.plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-          GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-        run: |
-          jq -n \
-            --arg hosts "${{ matrix.host }}" \
-            --arg image "ghcr.io/ai-workspace-services/console:latest" \
-            --arg user "$GHCR_USERNAME" \
-            --arg pass "$GHCR_PASSWORD" \
-            --arg domain "console${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}" \
-            '{console_service_target_host: $hosts, console_service_frontend_image: $image, console_service_registry_username: $user, console_service_registry_password: $pass, CANONICAL_DOMAIN: $domain, SERVED_DOMAINS: $domain}' \
-            > /tmp/console-vars.json
-          ansible-playbook -i ../cmdb/inventory.ini deploy_console_svc_plus.yml \
-            -e @/tmp/console-vars.json
+    - name: Deploy console.svc.plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
+        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_deploy-console-svc-plus.sh
 
-      - name: Deploy Vault (Co-located on Web SaaS)
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini setup-vault.yaml \
-            --limit "${{ matrix.host }}"
+    - name: Deploy Vault (Co-located on Web SaaS)
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_deploy-vault-co-located-on-web-saas.sh
 
-      - name: Deploy Monitoring Agents (Vector/Node/Process)
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
-            --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
+    - name: Deploy Monitoring Agents (Vector/Node/Process)
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_web_saas_deploy-monitoring-agents-vector-node-process.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 2c: Open Platform 域服务部署 (caddy / docker / postgres / gitea / zitadel / observability)
@@ -880,201 +644,151 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
-      - name: Checkout playbooks
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-infra/playbooks
-          ref: ${{ needs.provision.outputs.infra_ref }}
-          path: playbooks
+    - name: Checkout playbooks
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-infra/playbooks
+        ref: ${{ needs.provision.outputs.infra_ref }}
+        path: playbooks
 
-      - name: Download CMDB
-        uses: actions/download-artifact@v8
-        with:
-          name: platform-ops-toolkit-cmdb
-          path: cmdb
+    - name: Download CMDB
+      uses: actions/download-artifact@v8
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: cmdb
 
-      - name: Check if host belongs to infra_platform group
-        id: group_check
-        run: |
-          in_group="$(jq -r '.["${{ matrix.host }}"].groups | contains(["infra_platform"])' cmdb/cmdb.json)"
-          echo "in_group=${in_group}" >> "$GITHUB_OUTPUT"
+    - name: Check if host belongs to infra_platform group
+      id: group_check
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_check-if-host-belongs-to-infra-platform-group.sh
 
-      - name: Load Vault secrets
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          secrets: |
-            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-            ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
-            ${{ env.VAULT_KV_WEB_SAAS }} GHCR_USERNAME | GHCR_USERNAME ;
-            ${{ env.VAULT_KV_WEB_SAAS }} GHCR_PASSWORD | GHCR_PASSWORD ;
-            ${{ env.VAULT_KV_WEB_SAAS }} POSTGRES_ROOT_PASSWORD | POSTGRES_ROOT_PASSWORD
+    - name: Load Vault secrets
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+        token: ${{ github.event.inputs.vault_token }}
+        role: ${{ env.VAULT_ROLE }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        secrets: |
+          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
+          ${{ env.VAULT_KV_WEB_SAAS }} GHCR_USERNAME | GHCR_USERNAME ;
+          ${{ env.VAULT_KV_WEB_SAAS }} GHCR_PASSWORD | GHCR_PASSWORD ;
+          ${{ env.VAULT_KV_WEB_SAAS }} POSTGRES_ROOT_PASSWORD | POSTGRES_ROOT_PASSWORD
 
-      - name: Configure SSH Key
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
+    - name: Configure SSH Key
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_configure-ssh-key.sh
 
-      - name: Wait for host SSH
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          for _ in $(seq 1 60); do
-            if nc -z -w 5 "$ip" 22; then exit 0; fi
-            sleep 10
-          done
-          exit 1
+    - name: Wait for host SSH
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_wait-for-host-ssh.sh
 
-      - name: Install Ansible
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: pip install --quiet ansible
+    - name: Install Ansible
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: .github/scripts/platform-ops_deploy_infra_platform_install-ansible.sh
 
-      - name: Bootstrap Docker + Caddy + shared network
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          cat > /tmp/infra-platform-bootstrap.yml <<'EOF'
-          - name: Ensure Docker engine, Caddy, and shared network exist
-            hosts: "{{ target_host }}"
-            become: true
-            gather_facts: true
-            roles:
-              - roles/vhosts/docker
-              - roles/vhosts/caddy
-              - roles/host/stunnel-certs
-            tasks:
-              - name: Check for cn-toolkit-shared Docker network
-                ansible.builtin.command: docker network inspect cn-toolkit-shared
-                register: shared_network_inspect
-                changed_when: false
-                failed_when: false
-              - name: Create cn-toolkit-shared Docker network when missing
-                ansible.builtin.command: docker network create cn-toolkit-shared
-                when: shared_network_inspect.rc != 0
-          EOF
-          ansible-playbook -i ../cmdb/inventory.ini /tmp/infra-platform-bootstrap.yml \
-            -e "target_host=${{ matrix.host }}"
+    - name: Bootstrap Docker + Caddy + shared network
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_bootstrap-docker-caddy-shared-network.sh
 
-      - name: Checkout postgresql.svc.plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-services/postgresql.svc.plus
-          ref: main
-          path: postgresql-svc-plus
+    - name: Checkout postgresql.svc.plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-services/postgresql.svc.plus
+        ref: main
+        path: postgresql-svc-plus
 
-      - name: Build postgres-extensions image
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: postgresql-svc-plus
-        run: make build-postgres-image POSTGRES_IMAGE_NAME=postgres-extensions POSTGRES_IMAGE_TAG=17
+    - name: Build postgres-extensions image
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: postgresql-svc-plus
+      run: .github/scripts/platform-ops_deploy_infra_platform_build-postgres-extensions-image.sh
 
-      - name: Ship postgres-extensions image to host
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
-          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
-          docker save postgres-extensions:17 | gzip \
-            | ssh "${ssh_opts[@]}" "${user}@${ip}" 'gunzip | docker load'
+    - name: Ship postgres-extensions image to host
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_ship-postgres-extensions-image-to-host.sh
 
-      - name: Log target host into GHCR
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        env:
-          GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-          GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          user="$(jq -r '.["${{ matrix.host }}"].ansible_user // "root"' cmdb/cmdb.json)"
-          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=no -o BatchMode=yes)
-          printf '%s' "$GHCR_PASSWORD" \
-            | ssh "${ssh_opts[@]}" "${user}@${ip}" \
-                "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+    - name: Log target host into GHCR
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      env:
+        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
+        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_log-target-host-into-ghcr.sh
 
-      - name: Deploy postgresql.svc.plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          jq -n --arg pw "$POSTGRES_ROOT_PASSWORD" \
-            '{postgresql_service_postgres_env_defaults: {POSTGRES_USER: "postgres", POSTGRES_PASSWORD: $pw, POSTGRES_DB: "postgres", PG_LOCAL_PORT: "5432", PG_MAJOR: "17", PG_DATA_PATH: "/data"}}' \
-            > /tmp/postgres-env-vars.json
-          ansible-playbook -i ../cmdb/inventory.ini deploy_postgresql_svc_plus.yml \
-            -e "postgresql_service_hosts=${{ matrix.host }}" \
-            -e @/tmp/postgres-env-vars.json
+    - name: Deploy postgresql.svc.plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_deploy-postgresql-svc-plus.sh
 
-      - name: Provision platform databases and roles
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini create_databases_and_users.yml \
-            --limit "${{ matrix.host }}"
+    - name: Provision platform databases and roles
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_provision-platform-databases-and-roles.sh
 
-      - name: Deploy Gitea
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini gitea_deploy_temp.yml \
-            --limit "${{ matrix.host }}"
+    - name: Deploy Gitea
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_deploy-gitea.sh
 
-      - name: Deploy Zitadel IAM
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_zitadel_docker.yaml \
-            -e "zitadel_hosts=${{ matrix.host }}" \
-            -e "domain=iam${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}"
+    - name: Deploy Zitadel IAM
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_deploy-zitadel-iam.sh
 
-      - name: Deploy Observability Server Stack (VictoriaMetrics & Grafana)
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_observability.yml \
-            -e "observability_server_hosts=${{ matrix.host }}"
+    - name: Deploy Observability Server Stack (VictoriaMetrics & Grafana)
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_deploy-observability-server-stack-victoriametrics-grafana.sh
 
-      - name: Deploy Monitoring Agents (Vector/Node/Process)
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
-            --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
+    - name: Deploy Monitoring Agents (Vector/Node/Process)
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_infra_platform_deploy-monitoring-agents-vector-node-process.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 2d: Agent Proxy 域服务部署 (caddy / xray / xray-exporter / vector / agent-svc-plus)
@@ -1089,150 +803,96 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
-      - name: Checkout playbooks
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-infra/playbooks
-          ref: ${{ needs.provision.outputs.infra_ref }}
-          path: playbooks
+    - name: Checkout playbooks
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-infra/playbooks
+        ref: ${{ needs.provision.outputs.infra_ref }}
+        path: playbooks
 
-      - name: Download CMDB
-        uses: actions/download-artifact@v8
-        with:
-          name: platform-ops-toolkit-cmdb
-          path: cmdb
+    - name: Download CMDB
+      uses: actions/download-artifact@v8
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: cmdb
 
-      - name: Check if host belongs to agent_proxy group
-        id: group_check
-        run: |
-          in_group="$(jq -r '.["${{ matrix.host }}"].groups | contains(["agent_proxy"])' cmdb/cmdb.json)"
-          echo "in_group=${in_group}" >> "$GITHUB_OUTPUT"
+    - name: Check if host belongs to agent_proxy group
+      id: group_check
+      run: |-
+        .github/scripts/platform-ops_deploy_agent_proxy_check-if-host-belongs-to-agent-proxy-group.sh
 
-      - name: Load Vault secrets
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          secrets: |
-            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-            ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
-            ${{ env.VAULT_KV_AGENT_PROXY }} xray_uuid | XRAY_UUID
+    - name: Load Vault secrets
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+        token: ${{ github.event.inputs.vault_token }}
+        role: ${{ env.VAULT_ROLE }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        secrets: |
+          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
+          ${{ env.VAULT_KV_AGENT_PROXY }} xray_uuid | XRAY_UUID
 
-      - name: Configure SSH Key
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
+    - name: Configure SSH Key
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_agent_proxy_configure-ssh-key.sh
 
-      - name: Wait for host SSH
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: |
-          ip="$(jq -r '.["${{ matrix.host }}"].ip' cmdb/cmdb.json)"
-          for _ in $(seq 1 60); do
-            if nc -z -w 5 "$ip" 22; then exit 0; fi
-            sleep 10
-          done
-          exit 1
+    - name: Wait for host SSH
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: |-
+        .github/scripts/platform-ops_deploy_agent_proxy_wait-for-host-ssh.sh
 
-      - name: Install Ansible
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        run: pip install --quiet ansible
+    - name: Install Ansible
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      run: .github/scripts/platform-ops_deploy_agent_proxy_install-ansible.sh
 
-      - name: Bootstrap Caddy + Xray on Agent Proxy Node
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          cat > /tmp/agent-proxy-bootstrap.yml <<'EOF'
-          - name: Bootstrap Caddy and Xray binary on Agent Proxy Node
-            hosts: "{{ target_host }}"
-            become: true
-            gather_facts: true
-            roles:
-              - roles/vhosts/caddy
-            tasks:
-              - name: Install Xray binary using XTLS installation script
-                ansible.builtin.shell: |
-                  curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh -o /tmp/install-release.sh
-                  bash /tmp/install-release.sh
-                args:
-                  creates: /usr/local/bin/xray
+    - name: Bootstrap Caddy + Xray on Agent Proxy Node
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_agent_proxy_bootstrap-caddy-xray-on-agent-proxy-node.sh
 
-              - name: Ensure dummy/template xray-tcp.service is defined
-                ansible.builtin.copy:
-                  dest: /etc/systemd/system/xray-tcp.service
-                  content: |
-                    [Unit]
-                    Description=Xray Service (TCP)
-                    [Service]
-                    ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/tcp-config.json
-                  mode: '0644'
+    - name: Deploy agent-svc-plus
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
+        XRAY_UUID: ${{ steps.vault.outputs.XRAY_UUID }}
+      run: |-
+        .github/scripts/platform-ops_deploy_agent_proxy_deploy-agent-svc-plus.sh
 
-              - name: Ensure dummy/template xray.service is defined
-                ansible.builtin.copy:
-                  dest: /etc/systemd/system/xray.service
-                  content: |
-                    [Unit]
-                    Description=Xray Service (XHTTP)
-                    [Service]
-                    ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
-                  mode: '0644'
-          EOF
-          ansible-playbook -i ../cmdb/inventory.ini /tmp/agent-proxy-bootstrap.yml \
-            -e "target_host=${{ matrix.host }}"
+    - name: Deploy xray-exporter
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
+      run: |-
+        .github/scripts/platform-ops_deploy_agent_proxy_deploy-xray-exporter.sh
 
-      - name: Deploy agent-svc-plus
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
-          XRAY_UUID: ${{ steps.vault.outputs.XRAY_UUID }}
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_xray_proxy_server.yml \
-            -e "agent_service_hosts=${{ matrix.host }}" \
-            -e "agent_controller_url=https://accounts${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}" \
-            -e "agent_id=${{ matrix.host }}" \
-            -e "xray_uuid=${XRAY_UUID}" \
-            -e "agent_svc_plus_manage_source_checkout=true" \
-            -e "agent_svc_plus_build_on_target=true"
-
-      - name: Deploy xray-exporter
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_xray_exporter.yml \
-            -e "xray_exporter_hosts=${{ matrix.host }}"
-
-      - name: Deploy Monitoring Agents (Vector/Node/Process)
-        if: ${{ steps.group_check.outputs.in_group == 'true' }}
-        working-directory: playbooks
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        run: |
-          ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
-            --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
+    - name: Deploy Monitoring Agents (Vector/Node/Process)
+      if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      run: |-
+        .github/scripts/platform-ops_deploy_agent_proxy_deploy-monitoring-agents-vector-node-process.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
@@ -1243,66 +903,64 @@ jobs:
     if: ${{ always() && (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && (needs.deploy_web_saas.result == 'success' || needs.deploy_web_saas.result == 'skipped') && (needs.deploy_infra_platform.result == 'success' || needs.deploy_infra_platform.result == 'skipped') && (needs.deploy_agent_proxy.result == 'success' || needs.deploy_agent_proxy.result == 'skipped') && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.toolkit_action != 'deploy' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Download CMDB
+    - name: Download CMDB
         # 只在 provision 运行的情况下下载
-        if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
-        uses: actions/download-artifact@v8
-        with:
-          name: platform-ops-toolkit-cmdb
-          path: cmdb
+      if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
+      uses: actions/download-artifact@v8
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: cmdb
 
-      - name: Checkout platform-ops-toolkit
-        uses: actions/checkout@v7
-        with:
-          path: platform-ops-toolkit
+    - name: Checkout platform-ops-toolkit
+      uses: actions/checkout@v7
+      with:
+        path: platform-ops-toolkit
 
-      - name: Checkout playbooks
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-infra/playbooks
-          ref: ${{ github.event.inputs.infra_ref }}
-          path: playbooks
+    - name: Checkout playbooks
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-infra/playbooks
+        ref: ${{ github.event.inputs.infra_ref }}
+        path: playbooks
 
-      - name: Install Ansible
-        run: pip install --quiet ansible
+    - name: Install Ansible
+      run: .github/scripts/platform-ops_data_migration_install-ansible.sh
 
-      - name: Load Vault secrets for SSH
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          secrets: |
-            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-            ${{ env.VAULT_KV }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET ;
-            ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY ;
-            ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY ;
-            ${{ env.VAULT_KV }} TF_STATE_REGION | MIGRATION_S3_REGION ;
-            ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT ;
+    - name: Load Vault secrets for SSH
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+        token: ${{ github.event.inputs.vault_token }}
+        role: ${{ env.VAULT_ROLE }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        secrets: |
+          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET ;
+          ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY ;
+          ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY ;
+          ${{ env.VAULT_KV }} TF_STATE_REGION | MIGRATION_S3_REGION ;
+          ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT ;
 
-      - name: Configure SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
+    - name: Configure SSH Key
+      run: |-
+        .github/scripts/platform-ops_data_migration_configure-ssh-key.sh
 
-      - name: Run Toolkit Action (${{ needs.provision.outputs.toolkit_action }})
-        working-directory: platform-ops-toolkit
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-          ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-          MIGRATION_S3_BUCKET: ${{ steps.vault.outputs.MIGRATION_S3_BUCKET }}
-          MIGRATION_S3_ACCESS_KEY: ${{ steps.vault.outputs.MIGRATION_S3_ACCESS_KEY }}
-          MIGRATION_S3_SECRET_KEY: ${{ steps.vault.outputs.MIGRATION_S3_SECRET_KEY }}
-          MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
-          MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
-        run: |
-          make ${{ needs.provision.outputs.toolkit_action }} DOMAIN=${{ needs.provision.outputs.target_domains }} RUN_ARGS="-e source_host=${{ needs.provision.outputs.source_host }} -e target_host=www${{ needs.provision.outputs.env_suffix }}.${{ needs.provision.outputs.target_domain_base }} -e target_domain=${{ needs.provision.outputs.target_domain_base }} -e migration_flow.source.domain_base=${{ needs.provision.outputs.source_domain_base }}"
+    - name: Run Toolkit Action (${{ needs.provision.outputs.toolkit_action }})
+      working-directory: platform-ops-toolkit
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        MIGRATION_S3_BUCKET: ${{ steps.vault.outputs.MIGRATION_S3_BUCKET }}
+        MIGRATION_S3_ACCESS_KEY: ${{ steps.vault.outputs.MIGRATION_S3_ACCESS_KEY }}
+        MIGRATION_S3_SECRET_KEY: ${{ steps.vault.outputs.MIGRATION_S3_SECRET_KEY }}
+        MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
+        MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
+      run: |-
+        .github/scripts/platform-ops_data_migration_run-toolkit-action-needs-provision-outputs-toolkit-action.sh
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
@@ -1321,50 +979,44 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout platform-ops-toolkit
-        uses: actions/checkout@v7
-        with:
-          path: platform-ops-toolkit
+    - name: Checkout platform-ops-toolkit
+      uses: actions/checkout@v7
+      with:
+        path: platform-ops-toolkit
 
-      - name: Download CMDB
-        if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
-        uses: actions/download-artifact@v8
-        with:
-          name: platform-ops-toolkit-cmdb
-          path: cmdb
+    - name: Download CMDB
+      if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
+      uses: actions/download-artifact@v8
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: cmdb
 
-      - name: Checkout playbooks
-        uses: actions/checkout@v7
-        with:
-          repository: ai-workspace-infra/playbooks
-          ref: ${{ github.event.inputs.infra_ref }}
-          path: playbooks
+    - name: Checkout playbooks
+      uses: actions/checkout@v7
+      with:
+        repository: ai-workspace-infra/playbooks
+        ref: ${{ github.event.inputs.infra_ref }}
+        path: playbooks
 
-      - name: Install Ansible
-        run: pip install --quiet ansible
+    - name: Install Ansible
+      run: .github/scripts/platform-ops_switch_dns_install-ansible.sh
 
-      - name: Load Vault secrets for DNS
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: ${{ env.VAULT_ADDR }}
-          method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
-          token: ${{ github.event.inputs.vault_token }}
-          role: ${{ env.VAULT_ROLE }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          secrets: |
-            ${{ env.VAULT_KV }} CLOUDFLARE_DNS_API_TOKEN | CLOUDFLARE_DNS_API_TOKEN ;
-            ${{ env.VAULT_KV_AGENT_PROXY }} xray_uuid | XRAY_UUID
+    - name: Load Vault secrets for DNS
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: ${{ env.VAULT_ADDR }}
+        method: ${{ github.event.inputs.vault_token != '' && 'token' || 'jwt' }}
+        token: ${{ github.event.inputs.vault_token }}
+        role: ${{ env.VAULT_ROLE }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        secrets: |
+          ${{ env.VAULT_KV }} CLOUDFLARE_DNS_API_TOKEN | CLOUDFLARE_DNS_API_TOKEN ;
+          ${{ env.VAULT_KV_AGENT_PROXY }} xray_uuid | XRAY_UUID
 
-      - name: Switch Cloudflare DNS Records
-        env:
-          CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
-        run: |
-          if [ "${{ github.event.inputs.run_provision_and_deploy }}" = "true" ]; then
-            INVENTORY_PATH="../cmdb/inventory.ini"
-          else
-            INVENTORY_PATH="../platform-ops-toolkit/inventory.ini"
-          fi
-          cd playbooks
-          ansible-playbook -i "$INVENTORY_PATH" update_site_dns.yml -e "target_domain=${{ needs.provision.outputs.target_domain_base }}" -e "source_domain=${{ needs.provision.outputs.source_domain_base }}"
+    - name: Switch Cloudflare DNS Records
+      env:
+        CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
+      run: |-
+        .github/scripts/platform-ops_switch_dns_switch-cloudflare-dns-records.sh

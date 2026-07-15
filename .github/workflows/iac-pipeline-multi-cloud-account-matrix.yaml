@@ -4,8 +4,8 @@ on:
   push:
   pull_request:
     paths:
-      - 'terraform-hcl-standard/**'
-      - '.github/workflows/iac-pipeline-multi-cloud-account-matrix.yaml'
+    - 'terraform-hcl-standard/**'
+    - '.github/workflows/iac-pipeline-multi-cloud-account-matrix.yaml'
   workflow_dispatch:
     inputs:
       deploy_action:
@@ -93,94 +93,77 @@ jobs:
         component: ${{ fromJSON(inputs.components_json || github.event.inputs.components_json || '["vpc","role"]') }}
 
     steps:
-      - name: Checkout Toolkit
-        uses: actions/checkout@v4
+    - name: Checkout Toolkit
+      uses: actions/checkout@v4
 
-      - name: Checkout iac_modules
-        uses: actions/checkout@v4
-        with:
-          repository: ai-workspace-infra/iac_modules
-          path: iac_modules
+    - name: Checkout iac_modules
+      uses: actions/checkout@v4
+      with:
+        repository: ai-workspace-infra/iac_modules
+        path: iac_modules
 
-      - name: Load Vault secrets
-        id: vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: https://vault.svc.plus
-          method: jwt
-          role: github-actions-platform-ops-toolkit-${{ env.DEPLOY_ENV }}
-          jwtGithubAudience: vault
-          ignoreNotFound: true
-          exportToken: true
-          secrets: |
-            kv/data/CICD TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
-            kv/data/CICD TF_STATE_BUCKET | TF_STATE_BUCKET ;
-            kv/data/CICD TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
-            kv/data/CICD TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
-            kv/data/CICD TF_STATE_REGION | TF_STATE_REGION
+    - name: Load Vault secrets
+      id: vault
+      uses: hashicorp/vault-action@v4
+      with:
+        url: https://vault.svc.plus
+        method: jwt
+        role: github-actions-platform-ops-toolkit-${{ env.DEPLOY_ENV }}
+        jwtGithubAudience: vault
+        ignoreNotFound: true
+        exportToken: true
+        secrets: |
+          kv/data/CICD TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
+          kv/data/CICD TF_STATE_BUCKET | TF_STATE_BUCKET ;
+          kv/data/CICD TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
+          kv/data/CICD TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
+          kv/data/CICD TF_STATE_REGION | TF_STATE_REGION
 
-      - name: Setup IaC Environment
-        uses: ./.github/actions/setup-iac-env
-        with:
-          gitops_repo_name: ${{ inputs.gitops_repo_name || github.event.inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
-          gitops_repo_ref: ${{ inputs.gitops_repo_ref || github.event.inputs.gitops_repo_ref || 'main' }}
-          gitops_target_path: ${{ env.GITOPS_REPO_ROOT }}
+    - name: Setup IaC Environment
+      uses: ./.github/actions/setup-iac-env
+      with:
+        gitops_repo_name: ${{ inputs.gitops_repo_name || github.event.inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
+        gitops_repo_ref: ${{ inputs.gitops_repo_ref || github.event.inputs.gitops_repo_ref || 'main' }}
+        gitops_target_path: ${{ env.GITOPS_REPO_ROOT }}
 
-      - name: Load AWS config
-        if: ${{ env.CLOUD_PROVIDER == 'aws-cloud' }}
-        run: |
-          CONFIG_FILES="gitops/${{ env.PROJECT }}/${{ env.DEPLOY_ENV }}/${{ env.CLOUD_PROVIDER }}/account/bootstrap.yaml"
-          export ACCOUNT_FILE="$CONFIG_FILES"
-          python - <<'PY'
-          import os
-          import sys
-          from pathlib import Path
-          utils_dir = Path("iac_modules/terraform-hcl-standard/utils").resolve()
-          sys.path.insert(0, str(utils_dir))
-          from config_loader import load_account_credentials
-          try:
-              region, role_arn = load_account_credentials(os.environ["ACCOUNT_FILE"])
-              with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as handle:
-                  handle.write(f"AWS_REGION={region}\n")
-                  handle.write(f"AWS_ROLE_ARN={role_arn}\n")
-          except Exception as e:
-              print(f"Warning: Failed to load dynamic AWS config: {e}")
-              sys.exit(0)
-          PY
+    - name: Load AWS config
+      if: ${{ env.CLOUD_PROVIDER == 'aws-cloud' }}
+      run: |-
+        .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_load-aws-config.sh
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        if: ${{ env.CLOUD_PROVIDER == 'aws-cloud' && env.AWS_ROLE_ARN != '' }}
-        with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+    - uses: aws-actions/configure-aws-credentials@v4
+      if: ${{ env.CLOUD_PROVIDER == 'aws-cloud' && env.AWS_ROLE_ARN != '' }}
+      with:
+        aws-region: ${{ env.AWS_REGION }}
+        role-to-assume: ${{ env.AWS_ROLE_ARN }}
 
-      - name: Setup Terraform CLI Args
-        run: |
-          echo "TF_CLI_ARGS_init=-backend-config=\"endpoint=${{ steps.vault.outputs.TF_STATE_ENDPOINT }}\" -backend-config=\"bucket=${{ steps.vault.outputs.TF_STATE_BUCKET }}\" -backend-config=\"key=${{ env.PROJECT }}/${{ env.DEPLOY_ENV }}/${{ env.CLOUD_PROVIDER }}/accounts/${{ matrix.component }}/terraform.tfstate\" -backend-config=\"access_key=${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}\" -backend-config=\"secret_key=${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}\" -backend-config=\"region=${{ steps.vault.outputs.TF_STATE_REGION }}\" -backend-config=\"skip_credentials_validation=true\" -backend-config=\"skip_metadata_api_check=true\" -backend-config=\"skip_region_validation=true\" -backend-config=\"use_path_style=true\"" >> "$GITHUB_ENV"
+    - name: Setup Terraform CLI Args
+      run: |-
+        .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_setup-terraform-cli-args.sh
 
-      - name: Init
-        working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
-        run: make init CONFIG_DIR=../../../../../${{ env.CONFIG_DIR }}
+    - name: Init
+      working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
+      run: .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_init.sh
 
-      - name: Plan
-        working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
-        run: make plan CONFIG_DIR=../../../../../${{ env.CONFIG_DIR }}
+    - name: Plan
+      working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
+      run: .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_plan.sh
 
-      - name: Apply
-        working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
-        if: ${{ env.DEPLOY_ACTION == 'apply' }}
-        run: make apply CONFIG_DIR=../../../../../${{ env.CONFIG_DIR }}
+    - name: Apply
+      working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
+      if: ${{ env.DEPLOY_ACTION == 'apply' }}
+      run: .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_apply.sh
 
-      - name: Destroy
-        working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
-        if: ${{ env.DEPLOY_ACTION == 'destroy' }}
-        run: make destroy CONFIG_DIR=../../../../../${{ env.CONFIG_DIR }}
+    - name: Destroy
+      working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
+      if: ${{ env.DEPLOY_ACTION == 'destroy' }}
+      run: .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_destroy.sh
 
-      - name: Skip Apply/Destroy
-        if: ${{ env.DEPLOY_ACTION != 'apply' && env.DEPLOY_ACTION != 'destroy' }}
-        run: echo "Action set to plan → skipping apply/destroy steps."
+    - name: Skip Apply/Destroy
+      if: ${{ env.DEPLOY_ACTION != 'apply' && env.DEPLOY_ACTION != 'destroy' }}
+      run: .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_skip-apply-destroy.sh
 
-      - name: Output
-        working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
-        if: ${{ env.DEPLOY_ACTION == 'apply' }}
-        run: terraform output -json
+    - name: Output
+      working-directory: ${{ env.BASE_DIR }}/${{ matrix.component }}
+      if: ${{ env.DEPLOY_ACTION == 'apply' }}
+      run: .github/scripts/iac-pipeline-multi-cloud-account-matrix_terraform_output.sh
