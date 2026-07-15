@@ -4,8 +4,8 @@ set -euo pipefail
 # variable. Terraform creates the host and its CMDB is the only deploy
 # inventory for that run.
 if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-  deployment_env="${{ github.event.inputs.vault_env_path }}"
-  target_domains="${{ needs.provision.outputs.target_domains }}"
+  deployment_env="${INPUT_VAULT_ENV_PATH}"
+  target_domains="${INPUT_TARGET_DOMAINS}"
   
   if [ "${deployment_env}" = "sit" ] && [ "${target_domains}" = "all" ]; then
     rf="all-in-one"
@@ -18,9 +18,9 @@ if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
   resource_file="${deployment_env}/${rf}"
   terraform_workspace="${rf}-${deployment_env}"
   state_key="platform-ops-toolkit/${deployment_env}/${rf}.tfstate"
-  run="${{ github.event.inputs.run_provision_and_deploy }}"
+  run="${INPUT_RUN_PROVISION_AND_DEPLOY}"
   
-  user_action="${{ github.event.inputs.action }}"
+  user_action="${INPUT_ACTION}"
   if [ "$user_action" = "destroy" ]; then
     terraform_action="destroy"
     toolkit_action="none"
@@ -29,13 +29,13 @@ if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
     toolkit_action="$user_action"
   fi
   
-  infra_ref="${{ github.event.inputs.infra_ref }}"
-  console_ref="${{ github.event.inputs.console_ref }}"
-  offline_mode="${{ github.event.inputs.offline_mode }}"
-  source_host="${{ github.event.inputs.source_host }}"
-  source_domain_base="${{ github.event.inputs.source_domain_base }}"
-  target_domain_base="${{ github.event.inputs.target_domain_base }}"
-  confirm_dns_switch="${{ github.event.inputs.confirm_dns_switch }}"
+  infra_ref="${INPUT_INFRA_REF}"
+  console_ref="${INPUT_CONSOLE_REF}"
+  offline_mode="${INPUT_OFFLINE_MODE}"
+  source_host="${INPUT_SOURCE_HOST}"
+  source_domain_base="${INPUT_SOURCE_DOMAIN_BASE}"
+  target_domain_base="${INPUT_TARGET_DOMAIN_BASE}"
+  confirm_dns_switch="${INPUT_CONFIRM_DNS_SWITCH}"
 else
   case "${GITHUB_REF}" in
     refs/heads/main)
