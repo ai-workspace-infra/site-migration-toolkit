@@ -173,7 +173,7 @@ jobs:
         INPUT_TARGET_DOMAIN_BASE: ${{ github.event.inputs.target_domain_base }}
         INPUT_CONFIRM_DNS_SWITCH: ${{ github.event.inputs.confirm_dns_switch }}
       run: |-
-        .github/scripts/platform-ops_provision_route-ref-to-an-explicit-profile.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_route-ref-to-an-explicit-profile.sh
 
     - name: Load Vault secrets
       if: steps.route.outputs.run_provision_and_deploy == 'true'
@@ -215,13 +215,13 @@ jobs:
 
     - name: Install render deps
       if: steps.route.outputs.run_provision_and_deploy == 'true'
-      run: .github/scripts/platform-ops_provision_install-render-deps.sh
+      run: ${{ github.workspace }}/.github/scripts/platform-ops_provision_install-render-deps.sh
 
     - name: Map Instance Plan
       if: steps.route.outputs.run_provision_and_deploy == 'true'
       id: plan
       run: |-
-        .github/scripts/platform-ops_provision_map-instance-plan.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_map-instance-plan.sh
 
     - name: generate.py render
       if: steps.route.outputs.run_provision_and_deploy == 'true'
@@ -245,7 +245,7 @@ jobs:
         TF_STATE_BUCKET: ${{ steps.vault.outputs.TF_STATE_BUCKET }}
         TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
       run: |-
-        .github/scripts/platform-ops_provision_terraform-init.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_terraform-init.sh
 
     - name: Terraform Apply / Destroy
       if: steps.route.outputs.run_provision_and_deploy == 'true'
@@ -255,7 +255,7 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
         TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
       run: |-
-        .github/scripts/platform-ops_provision_terraform-apply-destroy.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_terraform-apply-destroy.sh
 
     - name: generate.py inventory
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
@@ -271,7 +271,7 @@ jobs:
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
       working-directory: ${{ env.ENV_DIR }}
       run: |-
-        .github/scripts/platform-ops_provision_build-deploy-matrix.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_build-deploy-matrix.sh
 
     - name: Upload CMDB artifact
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
@@ -287,14 +287,14 @@ jobs:
       env:
         VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
       run: |-
-        .github/scripts/platform-ops_provision_initialize-databases-credentials.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_initialize-databases-credentials.sh
 
     - name: Initialize Agent Proxy Credentials
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
       env:
         VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
       run: |-
-        .github/scripts/platform-ops_provision_initialize-agent-proxy-credentials.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_initialize-agent-proxy-credentials.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 2: 基础环境安装 (Bootstrap Deploy)
@@ -329,7 +329,7 @@ jobs:
     - name: Check if host belongs to ai_workspace group
       id: group_check
       run: |-
-        .github/scripts/platform-ops_deploy_base_check-if-host-belongs-to-ai-workspace-group.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_check-if-host-belongs-to-ai-workspace-group.sh
 
     - name: Load Vault secrets
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -349,17 +349,17 @@ jobs:
     - name: Configure SSH Key
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_configure_ssh_key.sh
+        ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_wait_for_host_ssh.sh
+        ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Patch run-on-host-bootstrap.sh
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/platform-ops_deploy_base_patch-run-on-host-bootstrap-sh.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_patch-run-on-host-bootstrap-sh.sh
 
     - name: Run on-host bootstrap
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -370,7 +370,7 @@ jobs:
         AI_WORKSPACE_OFFLINE_MODE: ${{ needs.provision.outputs.offline_mode || 'off' }}
         AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
         INFRA_REF: ${{ needs.provision.outputs.infra_ref }}
-      run: .github/scripts/platform-ops_deploy_base_run-on-host-bootstrap.sh
+      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_run-on-host-bootstrap.sh
 
 
   # ---------------------------------------------------------------------------
@@ -420,7 +420,7 @@ jobs:
     - name: Check if host belongs to web_saas group
       id: group_check
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_check-if-host-belongs-to-web-saas-group.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_check-if-host-belongs-to-web-saas-group.sh
 
     - name: Load Vault secrets
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -452,21 +452,21 @@ jobs:
         ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
         POSTGRES_ROOT_PASSWORD: ${{ steps.vault.outputs.POSTGRES_ROOT_PASSWORD }}
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_validate-environment-scoped-web-saas-secrets.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_validate-environment-scoped-web-saas-secrets.sh
 
     - name: Configure SSH Key
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_configure_ssh_key.sh
+        ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_wait_for_host_ssh.sh
+        ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Install Ansible
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
-      run: .github/scripts/common_install_ansible.sh
+      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Set up Go
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -482,7 +482,7 @@ jobs:
         GOOS: linux
         GOARCH: amd64
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_build-billing-service-binary.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_build-billing-service-binary.sh
 
     - name: Bootstrap Docker + Caddy + shared network + stunnel certs
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -492,7 +492,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_bootstrap-docker-caddy-shared-network-stunnel-certs.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_bootstrap-docker-caddy-shared-network-stunnel-certs.sh
 
     - name: Checkout postgresql.svc.plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -513,12 +513,12 @@ jobs:
     - name: Build postgres-extensions image
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: postgresql-svc-plus
-      run: .github/scripts/common_build_postgres_extensions.sh
+      run: ${{ github.workspace }}/.github/scripts/common_build_postgres_extensions.sh
 
     - name: Ship postgres-extensions image to host
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_ship_postgres_extensions.sh
+        ${{ github.workspace }}/.github/scripts/common_ship_postgres_extensions.sh
 
       # postgresql_service 角色的 stunnel 端镜像 ghcr.io/x-evor/stunnel-server
       # 是 GHCR 私有包 (镜像源码已收编进 x-evor/artifacts oci/stunnel-server,
@@ -531,7 +531,7 @@ jobs:
         GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
       run: |-
-        .github/scripts/common_docker_login_ghcr.sh
+        ${{ github.workspace }}/.github/scripts/common_docker_login_ghcr.sh
 
     - name: Deploy postgresql.svc.plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -541,7 +541,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/common_deploy_postgresql.sh
+        ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
 
     - name: Deploy stunnel-client
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -551,7 +551,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_deploy-stunnel-client.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-stunnel-client.sh
 
       # web-saas 主机跑的是自己独立的 postgres 实例 (与 infra-platform 的
       # postgres 是两台不同主机), 这台上的 account/litellm/rag 等库和专属
@@ -575,7 +575,7 @@ jobs:
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
       run: |-
-        .github/scripts/common_provision_databases_and_roles.sh
+        ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
 
     - name: Checkout accounts.svc.plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -592,7 +592,7 @@ jobs:
     - name: Initialize account schema when absent
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_initialize-account-schema-when-absent.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_initialize-account-schema-when-absent.sh
 
     - name: Deploy accounts.svc.plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -608,7 +608,7 @@ jobs:
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
         ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_deploy-accounts-svc-plus.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-accounts-svc-plus.sh
 
     - name: Deploy billing-service
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -620,7 +620,7 @@ jobs:
         BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
         INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_deploy-billing-service.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-billing-service.sh
 
     - name: Deploy console.svc.plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -632,7 +632,7 @@ jobs:
         GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_deploy-console-svc-plus.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-console-svc-plus.sh
 
     - name: Deploy Vault (Co-located on Web SaaS)
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -642,7 +642,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_web_saas_deploy-vault-co-located-on-web-saas.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-vault-co-located-on-web-saas.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -652,7 +652,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/common_deploy_monitoring_agents.sh
+        ${{ github.workspace }}/.github/scripts/common_deploy_monitoring_agents.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 2c: Open Platform 域服务部署 (caddy / docker / postgres / gitea / zitadel / observability)
@@ -686,7 +686,7 @@ jobs:
     - name: Check if host belongs to infra_platform group
       id: group_check
       run: |-
-        .github/scripts/platform-ops_deploy_infra_platform_check-if-host-belongs-to-infra-platform-group.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_check-if-host-belongs-to-infra-platform-group.sh
 
     - name: Load Vault secrets
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -709,16 +709,16 @@ jobs:
     - name: Configure SSH Key
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_configure_ssh_key.sh
+        ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_wait_for_host_ssh.sh
+        ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Install Ansible
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
-      run: .github/scripts/common_install_ansible.sh
+      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Bootstrap Docker + Caddy + shared network
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -728,7 +728,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_infra_platform_bootstrap-docker-caddy-shared-network.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_bootstrap-docker-caddy-shared-network.sh
 
     - name: Checkout postgresql.svc.plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -741,12 +741,12 @@ jobs:
     - name: Build postgres-extensions image
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: postgresql-svc-plus
-      run: .github/scripts/common_build_postgres_extensions.sh
+      run: ${{ github.workspace }}/.github/scripts/common_build_postgres_extensions.sh
 
     - name: Ship postgres-extensions image to host
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_ship_postgres_extensions.sh
+        ${{ github.workspace }}/.github/scripts/common_ship_postgres_extensions.sh
 
     - name: Log target host into GHCR
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -754,7 +754,7 @@ jobs:
         GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
       run: |-
-        .github/scripts/common_docker_login_ghcr.sh
+        ${{ github.workspace }}/.github/scripts/common_docker_login_ghcr.sh
 
     - name: Deploy postgresql.svc.plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -764,7 +764,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/common_deploy_postgresql.sh
+        ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
 
     - name: Provision platform databases and roles
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -774,7 +774,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/common_provision_databases_and_roles.sh
+        ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
 
     - name: Deploy Gitea
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -784,7 +784,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_infra_platform_deploy-gitea.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-gitea.sh
 
     - name: Deploy Zitadel IAM
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -794,7 +794,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_infra_platform_deploy-zitadel-iam.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-zitadel-iam.sh
 
     - name: Deploy Observability Server Stack (VictoriaMetrics & Grafana)
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -804,7 +804,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_infra_platform_deploy-observability-server-stack-victoriametrics-grafana.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-observability-server-stack-victoriametrics-grafana.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -814,7 +814,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/common_deploy_monitoring_agents.sh
+        ${{ github.workspace }}/.github/scripts/common_deploy_monitoring_agents.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 2d: Agent Proxy 域服务部署 (caddy / xray / xray-exporter / vector / agent-svc-plus)
@@ -848,7 +848,7 @@ jobs:
     - name: Check if host belongs to agent_proxy group
       id: group_check
       run: |-
-        .github/scripts/platform-ops_deploy_agent_proxy_check-if-host-belongs-to-agent-proxy-group.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_check-if-host-belongs-to-agent-proxy-group.sh
 
     - name: Load Vault secrets
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -869,16 +869,16 @@ jobs:
     - name: Configure SSH Key
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_configure_ssh_key.sh
+        ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
-        .github/scripts/common_wait_for_host_ssh.sh
+        ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Install Ansible
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
-      run: .github/scripts/common_install_ansible.sh
+      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Bootstrap Caddy + Xray on Agent Proxy Node
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -888,7 +888,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/platform-ops_deploy_agent_proxy_bootstrap-caddy-xray-on-agent-proxy-node.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_bootstrap-caddy-xray-on-agent-proxy-node.sh
 
     - name: Deploy agent-svc-plus
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -900,7 +900,7 @@ jobs:
         INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
         XRAY_UUID: ${{ steps.vault.outputs.XRAY_UUID }}
       run: |-
-        .github/scripts/platform-ops_deploy_agent_proxy_deploy-agent-svc-plus.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_deploy-agent-svc-plus.sh
 
     - name: Deploy xray-exporter
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -911,7 +911,7 @@ jobs:
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
       run: |-
-        .github/scripts/platform-ops_deploy_agent_proxy_deploy-xray-exporter.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_deploy-xray-exporter.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -921,7 +921,7 @@ jobs:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
       run: |-
-        .github/scripts/common_deploy_monitoring_agents.sh
+        ${{ github.workspace }}/.github/scripts/common_deploy_monitoring_agents.sh
 
   # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
@@ -951,7 +951,7 @@ jobs:
         path: playbooks
 
     - name: Install Ansible
-      run: .github/scripts/common_install_ansible.sh
+      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Load Vault secrets for SSH
       id: vault
@@ -973,7 +973,7 @@ jobs:
 
     - name: Configure SSH Key
       run: |-
-        .github/scripts/platform-ops_data_migration_configure-ssh-key.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_data_migration_configure-ssh-key.sh
 
     - name: Run Toolkit Action (${{ needs.provision.outputs.toolkit_action }})
       working-directory: platform-ops-toolkit
@@ -987,7 +987,7 @@ jobs:
         MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
         MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
       run: |-
-        .github/scripts/platform-ops_data_migration_run-toolkit-action-needs-provision-outputs-toolkit-action.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_data_migration_run-toolkit-action-needs-provision-outputs-toolkit-action.sh
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
@@ -1024,7 +1024,7 @@ jobs:
         path: playbooks
 
     - name: Install Ansible
-      run: .github/scripts/common_install_ansible.sh
+      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Load Vault secrets for DNS
       id: vault
@@ -1044,4 +1044,4 @@ jobs:
       env:
         CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
       run: |-
-        .github/scripts/platform-ops_switch_dns_switch-cloudflare-dns-records.sh
+        ${{ github.workspace }}/.github/scripts/platform-ops_switch_dns_switch-cloudflare-dns-records.sh
