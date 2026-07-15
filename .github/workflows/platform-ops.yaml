@@ -153,6 +153,9 @@ jobs:
       hosts: ${{ steps.matrix.outputs.hosts || '[]' }}
       count: ${{ steps.matrix.outputs.count || '0' }}
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Route ref to an explicit profile
       id: route
       run: |-
@@ -294,6 +297,9 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Checkout xworkspace-console helpers
       uses: actions/checkout@v7
       with:
@@ -374,6 +380,9 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Checkout playbooks
       uses: actions/checkout@v7
       with:
@@ -644,6 +653,9 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Checkout playbooks
       uses: actions/checkout@v7
       with:
@@ -803,6 +815,9 @@ jobs:
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Checkout playbooks
       uses: actions/checkout@v7
       with:
@@ -911,10 +926,8 @@ jobs:
         name: platform-ops-toolkit-cmdb
         path: cmdb
 
-    - name: Checkout platform-ops-toolkit
-      uses: actions/checkout@v7
-      with:
-        path: platform-ops-toolkit
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -979,10 +992,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-    - name: Checkout platform-ops-toolkit
-      uses: actions/checkout@v7
-      with:
-        path: platform-ops-toolkit
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Download CMDB
       if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
