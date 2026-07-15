@@ -53,6 +53,10 @@ on:
         type: string
         default: main
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   landingzone:
     if: ${{ inputs.run_landingzone != false }}
