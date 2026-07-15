@@ -1,196 +1,103 @@
 # platform-ops-toolkit
 
-*🇨🇳 中文版 | Chinese version*
+[🇬🇧 English](README.md) | [🇨🇳 中文版](README_zh.md)
 
-欢迎使用 **platform-ops-toolkit**。本代码库提供了面向 AI Workspace 基础架构灾难恢复及跨机房整体迁移的自动化解决方案。
+Welcome to **platform-ops-toolkit**. This repository provides automated solutions for disaster recovery, cross-datacenter full migrations, and multi-environment delivery lifecycles for the AI Workspace infrastructure.
 
-> ℹ️ **架构升级提示**：本工具集已经从旧版的“All-in-One”大一统架构，重构为以**业务域 (Business Domains)** 为边界的高内聚架构。这允许我们针对不同业务系统进行解耦、按需迁移及独立演进。
+> ℹ️ **Architecture Upgrade Notice**: This toolkit has been refactored from a legacy "All-in-One" monolithic architecture into a highly cohesive architecture bounded by **Business Domains**. This allows us to decouple, migrate on-demand, and independently evolve different business systems. Simultaneously, we have fully implemented a unified [Multi-Environment Delivery Standard](docs/standards/multi-environment-delivery-and-release-standard.md).
 
-## 🌐 核心业务域导航 (Business Domains)
+## 🌐 Core Business Domains
 
-本工具集依据线上系统的实际业务链路，拆分为以下三大核心域：
+This toolkit is divided into four core domains based on the actual business topology of the production systems:
 
-1. **[domain-ai-workspace](domains/ai-workspace/README.md)** (AI 核心链路域)
-   - 涵盖 LiteLLM、OpenClaw、QMD 等智能代理与模型路由调度链路。
-2. **[domain-web-saas](domains/web-saas/README.md)** (SaaS 前端与加速域)
-   - 涵盖 Web Console、Accounts、Billing 计费及底层的 Xray 隧道代理入口。
-3. **[domain-open-platform](domains/open-platform/README.md)** (开放平台与基础设施域)
-   - 涵盖 Gitea、Vault、IAM (Zitadel) 以及强大的全局可观测性底座 (Observability Stack - Grafana, VictoriaMetrics 等)。
-4. **[domain-agent-proxy](domains/agent-proxy/README.md)** (加速代理与网关域)
-   - 涵盖 Caddy、Xray 隧道、Xray Exporters、Vector 观测代理和 agent-svc-plus 控制面同步节点。
+1. **[web-saas](domains/web-saas/README.md)** (SaaS Frontend & Acceleration Domain)
+   - Covers Web Console, Accounts, Billing, and the underlying Xray tunnel proxy ingress.
+2. **[ai-workspace](domains/ai-workspace/README.md)** (AI Core Routing Domain)
+   - Covers LiteLLM, OpenClaw, QMD, and other intelligent agent/model routing pipelines.
+3. **[agent-proxy](domains/agent-proxy/README.md)** (Acceleration Proxy & Gateway Domain)
+   - Covers Caddy, Xray tunnels, Xray Exporters, Vector observability proxies, and agent-svc-plus control plane sync nodes.
+4. **[open-platform](domains/open-platform/README.md)** (Open Platform & Infrastructure Domain)
+   - Covers Gitea, Vault, IAM (Zitadel), and a robust global Observability Stack (Grafana, VictoriaMetrics, etc.).
 
-详细的各个域的迁移、备份、与恢复策略，请查阅各个子域内的 `README.md` 文档。
+For detailed migration, backup, and restoration strategies for each domain, please refer to the `README.md` documents within their respective sub-directories.
 
-## 🚀 迁移编排与使用 (Orchestration)
+## 🚀 Orchestration and Usage
 
-*注：编排层正在从旧版 Python 单体脚本向模块化 Ansible / Make 支持过渡中。*
+*Note: The orchestration layer is currently transitioning from legacy monolithic Python scripts to a modular Ansible / Make supported architecture.*
 
-您可以通过全局的入口命令，指定单个或多个 `DOMAIN` 来执行按需备份或迁移：
+You can perform on-demand backups or migrations by specifying one or more `DOMAIN`s using the global entry commands:
 
 ```bash
-# 示例：仅对 AI 工作区及开放平台底座进行数据备份
+# Example: Data backup exclusively for the AI workspace and open platform domains
 make backup DOMAIN=ai-workspace,open-platform
 
-# 示例：一键触发全站各域的迁移与恢复流水线
+# Example: One-click trigger for a full-site migration and recovery pipeline across all domains
 make migrate DOMAIN=all
 ```
 
-## 🛠️ CI/CD 与 IaC 流水线
+## 🛠️ CI/CD and IaC Pipelines
 
-通过流水线触发整体或部分域的迁移时，底层同样会调用相应的业务域策略模块。
+When triggering deployments or migrations for the whole site or specific domains via CI/CD pipelines, the underlying logic will invoke the corresponding business domain strategy modules.
 
-### 环境 Profile 发布（push）
+### Environment Profile Releases and Routing Rules
 
-`platform-ops.yaml` 在分支推送时运行完整的 profile，不使用
-`UAT_TARGET_HOST` 或 `DEFAULT_TARGET_HOST`。Terraform 先创建或更新主机，再生成
-CMDB；后续 Ansible 只能使用该 run 的 CMDB inventory。
+When triggered, `platform-ops.yaml` automatically routes to the appropriate delivery environment based on the current Git branch or tag. Terraform creates or updates the hosts first, then generates the CMDB; subsequently, Ansible will strictly use the CMDB inventory generated during that specific run.
 
-| 来源 | 环境 | 资源声明 | state key / workspace | 动作 |
-| --- | --- | --- | --- | --- |
-| `main` | `uat` | `web-saas-uat.yaml` | `site-migration-toolkit/uat/terraform.tfstate` / `web-saas-uat` | provision + web-saas deploy |
-| `release/**`、`v*` | `prod` | `web-saas-prod.yaml` | `site-migration-toolkit/prod/terraform.tfstate` / `web-saas-prod` | provision + web-saas deploy |
-| `workflow_dispatch` | 用户选择 | `web-saas-<vault_env_path>.yaml` | 对应环境 | 用户指定 |
+| Trigger Event / Source | Target Environment | Resource Declaration | State Key / Workspace |
+| --- | --- | --- | --- |
+| `pull_request` | `sit` | `sit/all-in-one.yaml` | `site-migration-toolkit/sit/all-in-one.tfstate` |
+| `main` / `release/*` push | `uat` | `uat/web-saas-uat.yaml` | `site-migration-toolkit/uat/web-saas-uat.tfstate` |
+| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas-prod.yaml` | `site-migration-toolkit/prod/web-saas-prod.tfstate` |
+| `workflow_dispatch` | User selected | `[env]/web-saas-[env].yaml` | Environment specific |
 
-首次 UAT 发布前仍须配置 `console.uat.svc.plus`、`postgresql-saas.uat.svc.plus`
-的 DNS，并在 Vault 写入 `kv/data/uat/web-saas` 的 web-saas 凭证。工作流会在这些
-凭证缺失时失败，绝不会回退读取生产 `kv/data/WEB_SAAS`。
+Prior to the initial UAT / Prod release, you must configure DNS for the target environment (e.g., `console.uat.svc.plus` or the production domains) and inject the corresponding `kv/data/[env]/web-saas` credentials into Vault. The workflow will fail if these credentials are missing. **Environments are strictly isolated, and pipelines will never read secrets across environments.**
 
-### ⚠️ Vault 鉴权配置 (GitHub Actions OIDC → Vault JWT)
+### ⚠️ Vault Authentication Configuration (GitHub Actions OIDC → Vault JWT)
 
-流水线不使用任何 GitHub Actions Secrets 存敏感值；所有凭证都在运行时经
-**GitHub OIDC → Vault JWT** 登录后，从 Vault KV 按路径分发。完整初始化过程如下
-（一次性操作，需要 Vault 管理员 token，在任意能访问 `https://vault.svc.plus` 的终端执行）。
+Pipelines do NOT store sensitive values in GitHub Actions Secrets. All credentials are distributed at runtime from Vault KV paths (`sit`, `uat`, `prod`) after authenticating via **GitHub OIDC → Vault JWT**.
 
-#### 0. 全局前提（Vault 侧通常已存在，仅首次搭建需要）
+#### 1. Initialize Isolated Roles and Policies (One-time Setup)
+
+We have deprecated the global monolithic Vault Policy in favor of independent authorization per environment. You only need to execute the built-in initialization script using a Vault Administrator Token:
 
 ```bash
 export VAULT_ADDR=https://vault.svc.plus
-export VAULT_TOKEN="hvs.xxxxxxxxx"   # 管理员 Token
+export VAULT_TOKEN="hvs.xxxxxxxxx"   # Admin Token
 
-# jwt auth mount（整个 org 共享一个，已存在则跳过）
-vault auth enable jwt
-vault write auth/jwt/config \
-  oidc_discovery_url="https://token.actions.githubusercontent.com" \
-  bound_issuer="https://token.actions.githubusercontent.com"
-
-# KV v2 引擎挂载在 kv/（已存在则跳过）
-vault secrets enable -path=kv kv-v2
+# Grant execution permissions and run
+chmod +x docs/tasks/vault_auth_split.sh
+./docs/tasks/vault_auth_split.sh
 ```
 
-#### 1. Policy：本仓库专属，按域最小授权
+This script will automatically create:
+- Three environment-specific policies: `github-actions-platform-ops-toolkit-sit`, `-uat`, `-prod`
+- Three OIDC JWT authentication roles: `github-actions-platform-ops-toolkit-sit`, `-uat`, `-prod`
+- Security constraints: For example, the `prod` role is strictly bound to only accept requests triggered by `v*` release tags, preventing hijacking from regular branches or PRs.
 
-```bash
-vault policy write github-actions-site-migration-toolkit - <<'EOF'
-# 共享 CICD 键: SSH 部署私钥 / Vultr / TF state / Cloudflare DNS
-path "kv/data/CICD" {
-  capabilities = ["read"]
-}
-path "kv/metadata/CICD" {
-  capabilities = ["read", "list"]
-}
-# web-saas 域专属键 (见 docs/domains/web-saas/README.md §4)
-path "kv/data/WEB_SAAS" {
-  capabilities = ["read"]
-}
-path "kv/metadata/WEB_SAAS" {
-  capabilities = ["read", "list"]
-}
-# 动态环境数据库凭证权限
-path "kv/data/+/databases" {
-  capabilities = ["read", "create", "update", "patch"]
-}
-path "kv/metadata/+/databases" {
-  capabilities = ["read", "list"]
-}
-# 动态环境 Agent Proxy 隧道 UUID 读写权限
-path "kv/data/+/agent-proxy" {
-  capabilities = ["read", "create", "update", "patch"]
-}
-path "kv/metadata/+/agent-proxy" {
-  capabilities = ["read", "list"]
-}
-EOF
-```
+#### 2. Populate KV Parameters for Each Domain
 
-> 💡 **排障提示**：若流水线在加载 Vault 敏感数据时（如加载数据库密码或 agent-proxy xray_uuid）报错 `403 (Forbidden)`，请参阅专用的 [Vault OIDC 策略配置与 403 权限排障指南](docs/ZH/BackUP/vault_oidc_policy_troubleshooting.md) 更新您的 Vault Policy。
->
-> 后续新增业务域的专属密钥时，沿用同一模式：新开 `kv/data/<DOMAIN>` 路径存放该域的 key，然后在这个 policy 里追加对应的 `data` + `metadata` 两段 path。不要把业务域密钥混进共享的 `kv/data/CICD`，也不要借用其他仓库的 policy。
+Please prepare your secrets in the corresponding environment paths, such as `kv/data/sit/*`, `kv/data/uat/*`, and `kv/data/prod/*`, according to the table below:
 
-#### 2. Role：只信任特定仓库的 OIDC 身份
-
-对于默认的 `site-migration-toolkit` 仓库：
-
-```bash
-vault write auth/jwt/role/github-actions-site-migration-toolkit - <<'EOF'
-{
-  "role_type": "jwt",
-  "user_claim": "repository",
-  "bound_audiences": ["vault"],
-  "bound_claims_type": "glob",
-  "bound_claims": {
-    "repository": "ai-workspace-infra/site-migration-toolkit",
-    "sub": "repo:ai-workspace-infra/site-migration-toolkit:*"
-  },
-  "token_policies": ["github-actions-site-migration-toolkit"],
-  "token_ttl": "20m",
-  "token_max_ttl": "30m"
-}
-EOF
-```
-
-对于 `platform-ops-toolkit` 仓库（如果您的流水线在此处运行）：
-
-```bash
-vault write auth/jwt/role/github-actions-platform-ops-toolkit - <<'EOF'
-{
-  "role_type": "jwt",
-  "user_claim": "repository",
-  "bound_audiences": ["vault"],
-  "bound_claims_type": "glob",
-  "bound_claims": {
-    "repository": "ai-workspace-infra/platform-ops-toolkit",
-    "sub": "repo:ai-workspace-infra/platform-ops-toolkit:*"
-  },
-  "token_policies": ["github-actions-site-migration-toolkit"], 
-  "token_ttl": "20m",
-  "token_max_ttl": "30m"
-}
-EOF
-```
-
-> `bound_claims` 把这个 role 锁定为**只有对应仓库的 workflow** 能换取 token；
-> 如需进一步只允许 main 分支触发，把 `sub` 收窄为
-> `repo:ai-workspace-infra/<repo-name>:ref:refs/heads/main`。
-
-> ⚠️ **NAT PROD 环境特别说明**：
-> NAT PROD 需要使用不同的 `VAULT_ROLE` 和不同的 `KV path`，不能与普通的 UAT/PROD 混用。请确保在对应的 pipeline `env` 中进行独立区分。
-
-#### 3. 填充各域 KV 参数
-
-| Vault 路径 | 键 | 用途 |
+| Vault Path Example | Key | Purpose |
 | --- | --- | --- |
-| `kv/data/CICD` | `SSH_PRIVATE_DEPLOY_KEY_B64` | Ansible SSH 到目标主机（单行 base64） |
-| `kv/data/CICD` | `VULTR_API_KEY` | Terraform provision VPS |
-| `kv/data/CICD` | `TF_STATE_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY/REGION` | 远端 TF state (S3 兼容) |
-| `kv/data/CICD` | `CLOUDFLARE_DNS_API_TOKEN` | switch_dns 阶段接管域名 |
-| `kv/data/WEB_SAAS` | 6 个键，见 [web-saas README §4](docs/domains/web-saas/README.md) | web-saas 域服务部署 |
+| `kv/data/CICD` | `SSH_PRIVATE_DEPLOY_KEY_B64` | Globally Shared: Ansible SSH deployment private key (single-line base64) |
+| `kv/data/CICD` | `VULTR_API_KEY` | Globally Shared: Terraform API key for provisioning VPS |
+| `kv/data/CICD` | `TF_STATE_ENDPOINT` etc. | Globally Shared: Remote TF state configuration (S3-compatible) |
+| `kv/data/CICD` | `CLOUDFLARE_DNS_API_TOKEN` | Globally Shared: Cloud DNS API token for hijacking or switching domains |
+| `kv/data/uat/web-saas` | 6 keys (see sub-domain docs) | Required credentials for web-saas UAT domain services |
+| `kv/data/prod/web-saas` | 6 keys (see sub-domain docs) | Required credentials for web-saas PROD domain services |
 
-#### 4. Workflow 侧接入（已落地，无需改动）
+#### 3. Workflow Dynamic Authentication Integration (Active, No Changes Required)
 
-`.github/workflows/platform-ops.yaml` 中每个 job：
+During execution, the workflow will dynamically compute and request the corresponding environment Role based on your trigger branch, ensuring a secure fetch of isolated secrets:
+```yaml
+env:
+  DEPLOY_ENV: ${{ steps.route.outputs.deploy_env }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ steps.route.outputs.deploy_env }}
+```
 
-1. `permissions: { contents: read, id-token: write }` —— `id-token: write` 是 OIDC 换 token 的前提；
-2. 确保 `env` 中配置了对应的角色环境变量（例如对于 platform-ops-toolkit）：
-   ```yaml
-   env:
-     VAULT_ROLE: github-actions-platform-ops-toolkit
-   ```
-3. `hashicorp/vault-action@v4`：`method: jwt`、`role: ${{ env.VAULT_ROLE }}`、`jwtGithubAudience: vault`，`secrets` 里每行 `<kv路径> <键> | <输出名>`；
-4. 后续步骤经 `steps.vault.outputs.<输出名>` 消费，不落盘、不进 GitHub Secrets。
+#### 4. Acceptance and Troubleshooting
 
-#### 5. 验收与排障
-
-- 触发流水线后每个 job 的 `Load Vault secrets` 步骤应显示 `Token Info` 且无报错。
-- `403 Forbidden`：role 绑定的 policy 未覆盖所读路径（对照 §1 检查 `data`+`metadata` 两段都在）。
-- `permission denied` / role 不匹配：核对 OIDC `repository`/`sub` 与 role 的 `bound_claims`。
-- vault-action 报 `valid path and key`：`secrets` 行间用 `;` 分隔、KV v2 路径必须含 `data/`（如 `kv/data/CICD` 而非 `kv/CICD`）。
+- After triggering a pipeline, the `Authenticate to Vault` or `Load Vault secrets` step within each job should display successful Token retrieval info without errors.
+- `403 Forbidden` error: This indicates that the policy bound to the dynamically assembled role does not cover the requested path (e.g., attempting to read production secrets from within the UAT environment).
+- `permission denied` or Role mismatch error: Please verify whether the Git event triggering the pipeline (such as the branch name or Tag) satisfies the strict security boundary constraints defined in the `bound_claims` of the Vault JWT Role.
