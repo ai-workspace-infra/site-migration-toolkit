@@ -4,7 +4,7 @@
 
 欢迎使用 **platform-ops-toolkit**。本代码库提供了面向 AI Workspace 基础架构灾难恢复、跨机房整体迁移以及多环境交付生命周期的自动化解决方案。
 
-> ℹ️ **架构升级提示**：本工具集已经从旧版的“All-in-One”大一统架构，重构为以**业务域 (Business Domains)** 为边界的高内聚架构。这允许我们针对不同业务系统进行解耦、按需迁移及独立演进。同时，我们已全面实施统一的[多环境交付与发布标准 (Multi-Environment Delivery Standard)](docs/standards/multi-environment-delivery-and-release-standard.md)。
+> ℹ️ **架构升级提示**：本工具集已经从旧版的“All-in-One”大一统架构，重构为高度模块化和动态化的基础设施即代码（IaC）平台。全新架构围绕 **“多组织 (Multi-Organization) / 多账户 (Multi-Account) / 多云 (Multi-Cloud) / 多环境 (Multi-Environment)”** 的拓扑层级进行了深度整合，并实现了 **Terraform (IaC) + Ansible + HashiCorp Vault** 的无缝安全协同。这允许我们针对不同业务系统和云基础架构进行解耦、按需部署、跨云迁移及独立演进。同时，我们已全面实施统一的多环境交付与发布标准 (Multi-Environment Delivery Standard)。
 
 ## 🌐 核心业务域导航 (Business Domains)
 
