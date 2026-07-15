@@ -2,7 +2,7 @@
 set -e
 
 # =============================================================================
-# Vault Authentication & Policy Split Initialization (sit, nat, prod)
+# Vault Authentication & Policy Split Initialization (sit, uat, prod)
 #
 # Requirements:
 # 1. Run this script from a terminal with access to Vault (e.g. https://vault.svc.plus).
@@ -34,9 +34,9 @@ path "kv/metadata/sit/*" {
 }
 EOF
 
-echo "Creating NAT Policy..."
-vault policy write github-actions-platform-ops-toolkit-nat - <<'EOF'
-# NAT Environment Access
+echo "Creating UAT Policy..."
+vault policy write github-actions-platform-ops-toolkit-uat - <<'EOF'
+# UAT Environment Access
 path "kv/data/CICD/*" {
   capabilities = ["read"]
 }
@@ -46,10 +46,10 @@ path "kv/data/openclaw/*" {
 path "kv/data/WEB_SAAS/*" {
   capabilities = ["read"]
 }
-path "kv/data/nat/*" {
+path "kv/data/uat/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
-path "kv/metadata/nat/*" {
+path "kv/metadata/uat/*" {
   capabilities = ["list", "read", "delete"]
 }
 EOF
@@ -86,8 +86,8 @@ vault write auth/jwt/role/github-actions-platform-ops-toolkit-sit \
   token_policies="github-actions-platform-ops-toolkit-sit" \
   token_ttl="1h"
 
-echo "Creating NAT Role (Bound to main branch)..."
-vault write auth/jwt/role/github-actions-platform-ops-toolkit-nat \
+echo "Creating UAT Role (Bound to main branch)..."
+vault write auth/jwt/role/github-actions-platform-ops-toolkit-uat \
   bound_audiences="vault" \
   bound_claims_type="glob" \
   bound_claims='{
@@ -96,7 +96,7 @@ vault write auth/jwt/role/github-actions-platform-ops-toolkit-nat \
   }' \
   user_claim="actor" \
   role_type="jwt" \
-  token_policies="github-actions-platform-ops-toolkit-nat" \
+  token_policies="github-actions-platform-ops-toolkit-uat" \
   token_ttl="1h"
 
 echo "Creating PROD Role (Bound to release/* and v*)..."
@@ -114,7 +114,7 @@ vault write auth/jwt/role/github-actions-platform-ops-toolkit-prod \
 
 # We add a separate role for prod tags since bound_claims is an exact match for glob objects, 
 # and vault CLI might have limitations combining multiple globs in a single ref field.
-# Alternatively, "ref" could just use a common prefix, but for precision we create another role:
+# Alteruatively, "ref" could just use a common prefix, but for precision we create another role:
 echo "Creating PROD Tags Role (Bound to v*)..."
 vault write auth/jwt/role/github-actions-platform-ops-toolkit-prod-tags \
   bound_audiences="vault" \
