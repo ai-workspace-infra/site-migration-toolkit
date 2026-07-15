@@ -23,9 +23,9 @@ on:
         type: boolean
         default: true
       project:
-        description: "环境(项目) / Project"
+        description: "环境(项目) / Project (Base Domain, e.g. svc.plus, onwalk.net)"
         type: string
-        default: xzerolab
+        default: svc.plus
       vault_env_path:
         description: "环境 / Vault Environment (e.g. sit, uat, prod)"
         type: choice
