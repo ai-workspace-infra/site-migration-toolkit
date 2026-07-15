@@ -325,6 +325,7 @@ jobs:
       with:
         repository: ai-workspace-lab/xworkspace-console
         ref: ${{ needs.provision.outputs.console_ref || 'main' }}
+        path: xworkspace-console
 
     - name: Download CMDB
       uses: actions/download-artifact@v8
@@ -370,14 +371,16 @@ jobs:
 
     - name: Patch run-on-host-bootstrap.sh
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: xworkspace-console
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_patch-run-on-host-bootstrap-sh.sh
 
     - name: Run on-host bootstrap
       if: ${{ steps.group_check.outputs.in_group == 'true' }}
+      working-directory: xworkspace-console
       env:
         MATRIX_HOST: ${{ matrix.host }}
-        CMDB_PATH: cmdb/cmdb.json
+        CMDB_PATH: ../cmdb/cmdb.json
         SSH_KEY_PATH: ~/.ssh/id_deploy
         AI_WORKSPACE_OFFLINE_MODE: ${{ needs.provision.outputs.offline_mode || 'off' }}
         AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
