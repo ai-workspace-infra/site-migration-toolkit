@@ -64,6 +64,9 @@ jobs:
       account_components: ${{ steps.parse.outputs.account }}
       resources_components: ${{ steps.parse.outputs.resources }}
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - id: parse
       run: |-
         .github/scripts/iac-pipeline-multi-cloud-master_prepare-matrix_step-0.sh
