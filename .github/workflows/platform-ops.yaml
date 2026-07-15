@@ -629,7 +629,6 @@ jobs:
         GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
         ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
-      env:
         PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
         PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
         MATRIX_HOST: ${{ matrix.host }}
