@@ -74,18 +74,12 @@ on:
           - 4C8G
           - 2C4G
           - 1C2G
-      toolkit_action:
-        description: "Toolkit 执行动作 (deploy = 仅在新环境部署全部服务，不执行数据迁移)"
-        required: false
-        default: "migrate"
+      action:
+        description: "执行动作 (deploy:仅部署服务 | destroy:销毁 | migrate/backup/restore:数据操作)"
+        required: true
+        default: "deploy"
         type: choice
-        options: [migrate, backup, restore, deploy]
-      terraform_action:
-        description: "apply 创建/更新，destroy 销毁"
-        required: false
-        default: "apply"
-        type: choice
-        options: [apply, destroy]
+        options: [deploy, destroy, migrate, backup, restore]
       confirm_dns_switch:
         description: "危险: 勾选此项将在最后一步接管原域名的生产流量 (仅真实灾备启用)"
         required: false
@@ -167,7 +161,7 @@ jobs:
           # inventory for that run.
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             deployment_env="${{ github.event.inputs.vault_env_path }}"
-            target_domains="${{ github.event.inputs.target_domains }}"
+            target_domains="${{ needs.provision.outputs.target_domains }}"
             
             if [ "${deployment_env}" = "sit" ] && [ "${target_domains}" = "all" ]; then
               rf="all-in-one"
@@ -181,14 +175,22 @@ jobs:
             terraform_workspace="${rf}-${deployment_env}"
             state_key="site-migration-toolkit/${deployment_env}/${rf}.tfstate"
             run="${{ github.event.inputs.run_provision_and_deploy }}"
-            terraform_action="${{ github.event.inputs.terraform_action }}"
-            toolkit_action="${{ github.event.inputs.toolkit_action }}"
+            
+            user_action="${{ github.event.inputs.action }}"
+            if [ "$user_action" = "destroy" ]; then
+              terraform_action="destroy"
+              toolkit_action="none"
+            else
+              terraform_action="apply"
+              toolkit_action="$user_action"
+            fi
+            
             infra_ref="${{ github.event.inputs.infra_ref }}"
             console_ref="${{ github.event.inputs.console_ref }}"
             offline_mode="${{ github.event.inputs.offline_mode }}"
-            source_host="${{ github.event.inputs.source_host }}"
-            source_domain_base="${{ github.event.inputs.source_domain_base }}"
-            target_domain_base="${{ github.event.inputs.target_domain_base }}"
+            source_host="${{ needs.provision.outputs.source_host }}"
+            source_domain_base="${{ needs.provision.outputs.source_domain_base }}"
+            target_domain_base="${{ needs.provision.outputs.target_domain_base }}"
             confirm_dns_switch="${{ github.event.inputs.confirm_dns_switch }}"
           else
             case "${GITHUB_REF}" in
@@ -1041,7 +1043,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_zitadel_docker.yaml \
             -e "zitadel_hosts=${{ matrix.host }}" \
-            -e "domain=iam.${{ github.event.inputs.target_domain_base }}"
+            -e "domain=iam.${{ needs.provision.outputs.target_domain_base }}"
 
       - name: Deploy Observability Server Stack (VictoriaMetrics & Grafana)
         if: ${{ steps.group_check.outputs.in_group == 'true' }}
@@ -1064,7 +1066,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
             --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability.${{ github.event.inputs.target_domain_base }}/ingest/metrics/api/v1/write"
+            -e "vector_prometheus_remote_write_url=https://observability.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
 
   # ---------------------------------------------------------------------------
   # 步骤 2d: Agent Proxy 域服务部署 (caddy / xray / xray-exporter / vector / agent-svc-plus)
@@ -1194,7 +1196,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_xray_proxy_server.yml \
             -e "agent_service_hosts=${{ matrix.host }}" \
-            -e "agent_controller_url=https://accounts.${{ github.event.inputs.target_domain_base }}" \
+            -e "agent_controller_url=https://accounts.${{ needs.provision.outputs.target_domain_base }}" \
             -e "agent_id=${{ matrix.host }}" \
             -e "xray_uuid=${XRAY_UUID}" \
             -e "agent_svc_plus_manage_source_checkout=true" \
@@ -1222,7 +1224,7 @@ jobs:
         run: |
           ansible-playbook -i ../cmdb/inventory.ini deploy_node_process_exporters.yml \
             --limit "${{ matrix.host }}" \
-            -e "vector_prometheus_remote_write_url=https://observability.${{ github.event.inputs.target_domain_base }}/ingest/metrics/api/v1/write"
+            -e "vector_prometheus_remote_write_url=https://observability.${{ needs.provision.outputs.target_domain_base }}/ingest/metrics/api/v1/write"
 
   # ---------------------------------------------------------------------------
   # 步骤 3: 全站单向数据流迁移与环境恢复 (Data Migration)
@@ -1230,7 +1232,7 @@ jobs:
   data_migration:
     name: Migrate Site Data (Source -> Target)
     needs: [deploy_base, deploy_web_saas, deploy_infra_platform, deploy_agent_proxy]
-    if: ${{ always() && (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && (needs.deploy_web_saas.result == 'success' || needs.deploy_web_saas.result == 'skipped') && (needs.deploy_infra_platform.result == 'success' || needs.deploy_infra_platform.result == 'skipped') && (needs.deploy_agent_proxy.result == 'success' || needs.deploy_agent_proxy.result == 'skipped') && github.event.inputs.terraform_action == 'apply' && github.event.inputs.toolkit_action != 'deploy' }}
+    if: ${{ always() && (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && (needs.deploy_web_saas.result == 'success' || needs.deploy_web_saas.result == 'skipped') && (needs.deploy_infra_platform.result == 'success' || needs.deploy_infra_platform.result == 'skipped') && (needs.deploy_agent_proxy.result == 'success' || needs.deploy_agent_proxy.result == 'skipped') && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.toolkit_action != 'deploy' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download CMDB
@@ -1280,7 +1282,7 @@ jobs:
           printf '%s' "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
 
-      - name: Run Toolkit Action (${{ github.event.inputs.toolkit_action }})
+      - name: Run Toolkit Action (${{ needs.provision.outputs.toolkit_action }})
         working-directory: site-migration-toolkit
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -1292,14 +1294,14 @@ jobs:
           MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
           MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
         run: |
-          make ${{ github.event.inputs.toolkit_action }} DOMAIN=${{ github.event.inputs.target_domains }} RUN_ARGS="-e source_host=${{ github.event.inputs.source_host }} -e target_host=www.${{ github.event.inputs.target_domain_base }} -e target_domain=${{ github.event.inputs.target_domain_base }} -e migration_flow.source.domain_base=${{ github.event.inputs.source_domain_base }}"
+          make ${{ needs.provision.outputs.toolkit_action }} DOMAIN=${{ needs.provision.outputs.target_domains }} RUN_ARGS="-e source_host=${{ needs.provision.outputs.source_host }} -e target_host=www.${{ needs.provision.outputs.target_domain_base }} -e target_domain=${{ needs.provision.outputs.target_domain_base }} -e migration_flow.source.domain_base=${{ needs.provision.outputs.source_domain_base }}"
 
   switch_dns:
     name: Switch DNS Traffic (Manual Approval)
     needs: [provision, deploy_base, deploy_web_saas, deploy_infra_platform, deploy_agent_proxy, data_migration]
     if: |
       always() &&
-      github.event.inputs.terraform_action == 'apply' &&
+      needs.provision.outputs.terraform_action == 'apply' &&
       (github.event.inputs.confirm_dns_switch == 'true' || github.event.inputs.confirm_dns_switch == true) &&
       (needs.provision.result == 'success' || needs.provision.result == 'skipped') &&
       (needs.initialize_vault_secrets.result == 'success' || needs.initialize_vault_secrets.result == 'skipped') &&
@@ -1357,4 +1359,4 @@ jobs:
             INVENTORY_PATH="../site-migration-toolkit/inventory.ini"
           fi
           cd playbooks
-          ansible-playbook -i "$INVENTORY_PATH" update_site_dns.yml -e "target_domain=${{ github.event.inputs.target_domain_base }}" -e "source_domain=${{ github.event.inputs.source_domain_base }}"
+          ansible-playbook -i "$INVENTORY_PATH" update_site_dns.yml -e "target_domain=${{ needs.provision.outputs.target_domain_base }}" -e "source_domain=${{ needs.provision.outputs.source_domain_base }}"
