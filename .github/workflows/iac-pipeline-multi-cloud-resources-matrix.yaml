@@ -26,10 +26,10 @@ on:
         type: choice
         options: [aws-cloud, gcp-cloud, vultr-vps]
         default: aws-cloud
-      components:
-        description: "资源层级组件选择 (逗号分隔)"
+      components_json:
+        description: '资源层级组件选择 (JSON数组格式，如 ["s3","ec2"])'
         type: string
-        default: 's3,ec2'
+        default: '["s3","ec2"]'
       gitops_repo_name:
         description: "GitOps repository (URL or owner/repo)"
         type: string
@@ -56,10 +56,10 @@ on:
         type: string
         required: false
         default: aws-cloud
-      components:
+      components_json:
         type: string
         required: false
-        default: 's3,ec2'
+        default: '["s3","ec2"]'
       gitops_repo_name:
         type: string
         required: false
@@ -85,29 +85,14 @@ env:
   AWS_ROLE_ARN: arn:aws:iam::950604983695:role/GithubAction_IAC_Deploy_Role
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      components: ${{ steps.parse.outputs.components }}
-    steps:
-      - id: parse
-        run: |
-          COMPONENTS="${{ inputs.components || github.event.inputs.components || 's3,ec2' }}"
-          if [ "$COMPONENTS" == "all" ]; then
-            COMPONENTS="s3,ec2"
-          fi
-          JSON_ARRAY=$(echo "$COMPONENTS" | tr -d ' ' | jq -R -c 'split(",")')
-          echo "components=${JSON_ARRAY}" >> "$GITHUB_OUTPUT"
-
   terraform:
-    needs: setup
     name: "${{ matrix.component }} :: pipeline (action=${{ inputs.deploy_action || github.event.inputs.deploy_action || 'plan' }})"
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
-        component: ${{ fromJSON(needs.setup.outputs.components) }}
+        component: ${{ fromJSON(inputs.components_json || github.event.inputs.components_json || '["s3","ec2"]') }}
 
     steps:
       - name: Checkout Toolkit

@@ -164,43 +164,15 @@ jobs:
         working-directory: ${{ env.TF_WORKDIR }}
         run: make apply CONFIG_DIR=../../../../../${{ env.CONFIG_DIR }}
 
-  validation:
-    name: "Validate LandingZone Baseline"
-    needs: landingzone
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Toolkit
-        uses: actions/checkout@v4
-
-      - name: Checkout iac_modules
-        uses: actions/checkout@v4
-        with:
-          repository: ai-workspace-infra/iac_modules
-          path: iac_modules
-
       - name: Run Validation Checks
+        if: env.DEPLOY_ACTION == 'apply'
         run: |
           echo "⚙️ Running LandingZone baseline validation..."
           chmod +x iac_modules/scripts/validation/validate-landingzone.sh
           iac_modules/scripts/validation/validate-landingzone.sh ${{ env.TF_WORKDIR }}
 
-  delivery:
-    name: "Delivery: Notify Rollout"
-    needs: validation
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Toolkit
-        uses: actions/checkout@v4
-
-      - name: Checkout iac_modules
-        uses: actions/checkout@v4
-        with:
-          repository: ai-workspace-infra/iac_modules
-          path: iac_modules
-
       - name: Notify
+        if: env.DEPLOY_ACTION == 'apply'
         env:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_USERNAME: "manbuzhe2009@qq.com"

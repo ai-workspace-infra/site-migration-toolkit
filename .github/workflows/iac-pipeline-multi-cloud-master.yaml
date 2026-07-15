@@ -58,20 +58,36 @@ permissions:
   contents: read
 
 jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      account_components: ${{ steps.parse.outputs.account }}
+      resources_components: ${{ steps.parse.outputs.resources }}
+    steps:
+      - id: parse
+        run: |
+          A="${{ inputs.accounts_components || 'vpc,role' }}"
+          [ "$A" == "all" ] && A="vpc,role"
+          echo "account=$(echo "$A" | tr -d ' ' | jq -R -c 'split(",")')" >> "$GITHUB_OUTPUT"
+          
+          R="${{ inputs.resources_components || 's3,ec2' }}"
+          [ "$R" == "all" ] && R="s3,ec2"
+          echo "resources=$(echo "$R" | tr -d ' ' | jq -R -c 'split(",")')" >> "$GITHUB_OUTPUT"
+
   landingzone:
     if: ${{ inputs.run_landingzone != false }}
     uses: ./.github/workflows/iac-pipeline-multi-cloud-landingzone-baseline.yaml
     with:
       deploy_action: ${{ inputs.deploy_action || 'apply' }}
-      project: ${{ inputs.project || 'xzerolab' }}
-      vault_env_path: ${{ inputs.vault_env_path || 'uat' }}
+      project: ${{ inputs.project || 'svc.plus' }}
+      vault_env_path: ${{ inputs.vault_env_path || 'sit' }}
       cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
       gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
       gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
     secrets: inherit
 
   account:
-    needs: landingzone
+    needs: [landingzone, prepare-matrix]
     if: |
       always() && 
       (inputs.run_account != false) &&
@@ -79,16 +95,16 @@ jobs:
     uses: ./.github/workflows/iac-pipeline-multi-cloud-account-matrix.yaml
     with:
       deploy_action: ${{ inputs.deploy_action || 'apply' }}
-      project: ${{ inputs.project || 'xzerolab' }}
-      vault_env_path: ${{ inputs.vault_env_path || 'uat' }}
+      project: ${{ inputs.project || 'svc.plus' }}
+      vault_env_path: ${{ inputs.vault_env_path || 'sit' }}
       cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
-      components: ${{ inputs.accounts_components || 'vpc,role' }}
+      components_json: ${{ needs.prepare-matrix.outputs.account_components }}
       gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
       gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
     secrets: inherit
 
   resources:
-    needs: account
+    needs: [account, prepare-matrix]
     if: |
       always() && 
       (inputs.run_resources != false) &&
@@ -96,10 +112,10 @@ jobs:
     uses: ./.github/workflows/iac-pipeline-multi-cloud-resources-matrix.yaml
     with:
       deploy_action: ${{ inputs.deploy_action || 'apply' }}
-      project: ${{ inputs.project || 'xzerolab' }}
-      vault_env_path: ${{ inputs.vault_env_path || 'uat' }}
+      project: ${{ inputs.project || 'svc.plus' }}
+      vault_env_path: ${{ inputs.vault_env_path || 'sit' }}
       cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
-      components: ${{ inputs.resources_components || 's3,ec2' }}
+      components_json: ${{ needs.prepare-matrix.outputs.resources_components }}
       gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
       gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
     secrets: inherit
