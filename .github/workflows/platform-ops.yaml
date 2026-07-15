@@ -292,6 +292,7 @@ jobs:
           TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
           TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
           TF_WORKSPACE_PREFIX: env
+          TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
         run: python3 scripts/generate.py render --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
       - name: Terraform init
@@ -325,6 +326,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+          TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
         run: python3 scripts/generate.py inventory --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
       - name: Build deploy matrix
