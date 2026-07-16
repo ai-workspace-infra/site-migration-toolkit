@@ -151,6 +151,10 @@ jobs:
       confirm_dns_switch: ${{ steps.route.outputs.confirm_dns_switch }}
       vault_env_path: ${{ steps.route.outputs.vault_env_path }}
       hosts: ${{ steps.matrix.outputs.hosts || '[]' }}
+      hosts_web_saas: ${{ steps.matrix.outputs.hosts_web_saas || '[]' }}
+      hosts_ai_workspace: ${{ steps.matrix.outputs.hosts_ai_workspace || '[]' }}
+      hosts_infra_platform: ${{ steps.matrix.outputs.hosts_infra_platform || '[]' }}
+      hosts_agent_proxy: ${{ steps.matrix.outputs.hosts_agent_proxy || '[]' }}
       count: ${{ steps.matrix.outputs.count || '0' }}
     steps:
     - name: Checkout repository
@@ -310,12 +314,12 @@ jobs:
     # 只负责 ai-workspace 域 (litellm/qmd/x-memory-hub/postgres/gateway-openclaw 等),
     # 不要对 web-saas / infra-platform 域跑这个全家桶安装器。
     needs: provision
-    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","ai-workspace"]'), needs.provision.outputs.target_domains) }}
+    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","ai-workspace"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_ai_workspace != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJSON(needs.provision.outputs.hosts) }}
+        host: ${{ fromJSON(needs.provision.outputs.hosts_ai_workspace) }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -333,15 +337,7 @@ jobs:
         name: platform-ops-toolkit-cmdb
         path: cmdb
 
-    - name: Check if host belongs to ai_workspace group
-      id: group_check
-      env:
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_check-if-host-belongs-to-ai-workspace-group.sh
-
     - name: Load Vault secrets
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       id: vault
       uses: hashicorp/vault-action@v4
       with:
@@ -356,27 +352,23 @@ jobs:
           ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN
 
     - name: Configure SSH Key
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         VAULT_ANSIBLE_SSH_KEY_B64: ${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Patch run-on-host-bootstrap.sh
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: xworkspace-console
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_patch-run-on-host-bootstrap-sh.sh
 
     - name: Run on-host bootstrap
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: xworkspace-console
       env:
         MATRIX_HOST: ${{ matrix.host }}
@@ -402,12 +394,12 @@ jobs:
   deploy_web_saas:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
     needs: provision
-    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","web-saas"]'), needs.provision.outputs.target_domains) }}
+    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","web-saas"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_web_saas != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJSON(needs.provision.outputs.hosts) }}
+        host: ${{ fromJSON(needs.provision.outputs.hosts_web_saas) }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -432,15 +424,7 @@ jobs:
         name: platform-ops-toolkit-cmdb
         path: cmdb
 
-    - name: Check if host belongs to web_saas group
-      id: group_check
-      env:
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_check-if-host-belongs-to-web-saas-group.sh
-
     - name: Load Vault secrets
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       id: vault
       uses: hashicorp/vault-action@v4
       with:
@@ -460,7 +444,6 @@ jobs:
           ${{ env.VAULT_KV_WEB_SAAS }} POSTGRES_ROOT_PASSWORD | POSTGRES_ROOT_PASSWORD
 
     - name: Validate environment-scoped web-saas secrets
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         MATRIX_HOST: ${{ matrix.host }}
         BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
@@ -473,29 +456,24 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_validate-environment-scoped-web-saas-secrets.sh
 
     - name: Configure SSH Key
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         VAULT_ANSIBLE_SSH_KEY_B64: ${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Install Ansible
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Set up Go
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       uses: actions/setup-go@v6
       with:
         go-version: "1.25"
 
     - name: Build billing-service binary
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: billing-service
       env:
         CGO_ENABLED: "0"
@@ -505,7 +483,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_build-billing-service-binary.sh
 
     - name: Bootstrap Docker + Caddy + shared network + stunnel certs
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -516,7 +493,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_bootstrap-docker-caddy-shared-network-stunnel-certs.sh
 
     - name: Checkout postgresql.svc.plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       uses: actions/checkout@v7
       with:
         repository: ai-workspace-services/postgresql.svc.plus
@@ -532,12 +508,10 @@ jobs:
       # 在 runner 上构建一次 (跟 billing-service 二进制同一个思路: 自己编译,
       # 不依赖外部产物), 再用 docker save | ssh docker load 灌进目标主机。
     - name: Build postgres-extensions image
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: postgresql-svc-plus
       run: ${{ github.workspace }}/.github/scripts/common_build_postgres_extensions.sh
 
     - name: Ship postgres-extensions image to host
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
@@ -549,7 +523,6 @@ jobs:
       # unauthorized。在目标主机上先用 WEB_SAAS 的 GHCR 凭据 docker login,
       # 之后 stunnel / accounts 等私有镜像的拉取都能通过。
     - name: Log target host into GHCR
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
@@ -558,7 +531,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_docker_login_ghcr.sh
 
     - name: Deploy postgresql.svc.plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -568,7 +540,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
 
     - name: Deploy stunnel-client
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         MATRIX_HOST: ${{ matrix.host }}
@@ -593,7 +564,6 @@ jobs:
       # 层显式传入, 建库和 accounts 容器两边用同一个值, 完全不依赖 Vault
       # 读写是否打通。
     - name: Provision account database and role
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -603,7 +573,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
 
     - name: Checkout accounts.svc.plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       uses: actions/checkout@v7
       with:
         repository: ai-workspace-services/accounts.svc.plus
@@ -615,12 +584,10 @@ jobs:
       # drop+recreate 的基线, 只允许在 users 表不存在时初始化一次, 绝不能
       # 在已有数据的库上重跑。
     - name: Initialize account schema when absent
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_initialize-account-schema-when-absent.sh
 
     - name: Deploy accounts.svc.plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -639,7 +606,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-accounts-svc-plus.sh
 
     - name: Deploy billing-service
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -654,7 +620,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-billing-service.sh
 
     - name: Deploy console.svc.plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -666,7 +631,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-console-svc-plus.sh
 
     - name: Deploy Vault (Co-located on Web SaaS)
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -677,7 +641,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-vault-co-located-on-web-saas.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         MATRIX_HOST: ${{ matrix.host }}
@@ -693,12 +656,12 @@ jobs:
   deploy_infra_platform:
     name: Deploy Open Platform Services on ${{ matrix.host }}
     needs: provision
-    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","infra-platform"]'), needs.provision.outputs.target_domains) }}
+    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","infra-platform"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_infra_platform != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJSON(needs.provision.outputs.hosts) }}
+        host: ${{ fromJSON(needs.provision.outputs.hosts_infra_platform) }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -716,13 +679,7 @@ jobs:
         name: platform-ops-toolkit-cmdb
         path: cmdb
 
-    - name: Check if host belongs to infra_platform group
-      id: group_check
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_check-if-host-belongs-to-infra-platform-group.sh
-
     - name: Load Vault secrets
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       id: vault
       uses: hashicorp/vault-action@v4
       with:
@@ -740,25 +697,21 @@ jobs:
           ${{ env.VAULT_KV_WEB_SAAS }} POSTGRES_ROOT_PASSWORD | POSTGRES_ROOT_PASSWORD
 
     - name: Configure SSH Key
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         VAULT_ANSIBLE_SSH_KEY_B64: ${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Install Ansible
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Bootstrap Docker + Caddy + shared network
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -769,7 +722,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_bootstrap-docker-caddy-shared-network.sh
 
     - name: Checkout postgresql.svc.plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       uses: actions/checkout@v7
       with:
         repository: ai-workspace-services/postgresql.svc.plus
@@ -777,17 +729,14 @@ jobs:
         path: postgresql-svc-plus
 
     - name: Build postgres-extensions image
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: postgresql-svc-plus
       run: ${{ github.workspace }}/.github/scripts/common_build_postgres_extensions.sh
 
     - name: Ship postgres-extensions image to host
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_ship_postgres_extensions.sh
 
     - name: Log target host into GHCR
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       env:
         PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
         PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
@@ -797,7 +746,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_docker_login_ghcr.sh
 
     - name: Deploy postgresql.svc.plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -808,7 +756,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
 
     - name: Provision platform databases and roles
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -819,7 +766,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
 
     - name: Deploy Gitea
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -830,7 +776,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-gitea.sh
 
     - name: Deploy Zitadel IAM
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -840,7 +785,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-zitadel-iam.sh
 
     - name: Deploy Observability Server Stack (VictoriaMetrics & Grafana)
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -851,7 +795,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-observability-server-stack-victoriametrics-grafana.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -870,12 +813,12 @@ jobs:
   deploy_agent_proxy:
     name: Deploy Agent Proxy Services on ${{ matrix.host }}
     needs: provision
-    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","agent-proxy"]'), needs.provision.outputs.target_domains) }}
+    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","agent-proxy"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_agent_proxy != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJSON(needs.provision.outputs.hosts) }}
+        host: ${{ fromJSON(needs.provision.outputs.hosts_agent_proxy) }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -893,15 +836,7 @@ jobs:
         name: platform-ops-toolkit-cmdb
         path: cmdb
 
-    - name: Check if host belongs to agent_proxy group
-      id: group_check
-      env:
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_check-if-host-belongs-to-agent-proxy-group.sh
-
     - name: Load Vault secrets
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       id: vault
       uses: hashicorp/vault-action@v4
       with:
@@ -917,21 +852,17 @@ jobs:
           ${{ env.VAULT_KV_AGENT_PROXY }} xray_uuid | XRAY_UUID
 
     - name: Configure SSH Key
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
     - name: Install Ansible
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
     - name: Bootstrap Caddy + Xray on Agent Proxy Node
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -942,7 +873,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_bootstrap-caddy-xray-on-agent-proxy-node.sh
 
     - name: Deploy agent-svc-plus
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -957,7 +887,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_deploy-agent-svc-plus.sh
 
     - name: Deploy xray-exporter
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         VAULT_ANSIBLE_SSH_KEY_B64: ${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}
@@ -970,7 +899,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/platform-ops_deploy_agent_proxy_deploy-xray-exporter.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
-      if: ${{ steps.group_check.outputs.in_group == 'true' }}
       working-directory: playbooks
       env:
         PROVISION_TOOLKIT_ACTION: ${{ needs.provision.outputs.toolkit_action }}
