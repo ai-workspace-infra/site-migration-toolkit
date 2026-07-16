@@ -10,6 +10,8 @@ name: Deploy Environment & Migrate Data (Data Sync)
 on:
   # Branches select a complete deployment profile. main provisions and deploys
   # an isolated UAT web-saas environment; stable refs select production.
+  pull_request:
+    types: [opened, synchronize, reopened]
   push:
     branches:
     - main
@@ -113,16 +115,18 @@ concurrency:
 
 env:
   VAULT_ADDR: ${{ github.event.inputs.vault_addr || 'https://vault.svc.plus' }}
-  # Push events do not have workflow_dispatch inputs. Keep manual runs
-  # configurable, while deriving a stable environment for release refs.
-  DEPLOY_ENV: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
-  VAULT_ENV_PATH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
-  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}
+  # Branches select a complete deployment profile:
+  # - pull_request -> sit
+  # - main / release/* -> uat
+  # - tags (v*) -> prod
+  DEPLOY_ENV: ${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}
+  VAULT_ENV_PATH: ${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}
   VAULT_KV: kv/data/CICD
   VAULT_KV_OPENCLAW: kv/data/openclaw
   VAULT_KV_WEB_SAAS: kv/data/WEB_SAAS
-  VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/databases
-  VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' && 'uat' || ((startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')) && 'prod' || 'sit')) || github.event.inputs.vault_env_path }}/agent-proxy
+  VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}/databases
+  VAULT_KV_AGENT_PROXY: kv/data/${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}/agent-proxy
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
   # 指向 platform-ops-toolkit 的 Terraform 目录
   ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/platform-ops-toolkit

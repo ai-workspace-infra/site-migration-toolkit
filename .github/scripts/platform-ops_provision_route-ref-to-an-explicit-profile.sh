@@ -37,26 +37,34 @@ if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
   target_domain_base="${INPUT_TARGET_DOMAIN_BASE}"
   confirm_dns_switch="${INPUT_CONFIRM_DNS_SWITCH}"
 else
-  case "${GITHUB_REF}" in
-    refs/heads/main)
-      deployment_env=uat; resource_file=uat/web-saas; terraform_workspace=web-saas-uat
-      state_key=platform-ops-toolkit/uat/web-saas.tfstate; run=true; target_domains=web-saas
-      terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-      source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-uat; confirm_dns_switch=false
-      ;;
-    refs/heads/release/*|refs/tags/v*)
-      deployment_env=prod; resource_file=prod/web-saas; terraform_workspace=web-saas-prod
-      state_key=platform-ops-toolkit/prod/web-saas.tfstate; run=true; target_domains=web-saas
-      terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-      source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=onwalk.net; env_suffix=""; confirm_dns_switch=false
-      ;;
-    *)
-      deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
-      state_key=platform-ops-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
-      terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
-      source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-sit; confirm_dns_switch=false
-      ;;
-  esac
+  GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}"
+  if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+    deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
+    state_key=platform-ops-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
+    terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
+    source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-sit; confirm_dns_switch=false
+  else
+    case "${GITHUB_REF}" in
+      refs/heads/main|refs/heads/release/*)
+        deployment_env=uat; resource_file=uat/web-saas; terraform_workspace=web-saas-uat
+        state_key=platform-ops-toolkit/uat/web-saas.tfstate; run=true; target_domains=web-saas
+        terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
+        source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-uat; confirm_dns_switch=false
+        ;;
+      refs/tags/v*)
+        deployment_env=prod; resource_file=prod/web-saas; terraform_workspace=web-saas-prod
+        state_key=platform-ops-toolkit/prod/web-saas.tfstate; run=true; target_domains=web-saas
+        terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
+        source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=onwalk.net; env_suffix=""; confirm_dns_switch=false
+        ;;
+      *)
+        deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
+        state_key=platform-ops-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
+        terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
+        source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-sit; confirm_dns_switch=false
+        ;;
+    esac
+  fi
 fi
 for key in deployment_env resource_file terraform_workspace state_key run target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch; do
   value="${!key:-}"
