@@ -162,7 +162,7 @@ jobs:
       count: ${{ steps.matrix.outputs.count || '0' }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Route ref to an explicit profile
       id: route
@@ -211,7 +211,7 @@ jobs:
         ref: ${{ steps.route.outputs.infra_ref }}
         path: infra/iac_modules
 
-    - uses: hashicorp/setup-terraform@v3
+    - uses: hashicorp/setup-terraform@v4
       if: steps.route.outputs.run_provision_and_deploy == 'true'
       with:
         terraform_version: "1.9.8"
@@ -326,7 +326,7 @@ jobs:
         host: ${{ fromJSON(needs.provision.outputs.hosts_ai_workspace) }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Checkout xworkspace-console helpers
       uses: actions/checkout@v7
@@ -367,21 +367,21 @@ jobs:
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
-    - name: Patch run-on-host-bootstrap.sh
-      working-directory: xworkspace-console
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_patch-run-on-host-bootstrap-sh.sh
-
-    - name: Run on-host bootstrap
-      working-directory: xworkspace-console
+    - name: Deploy AI Workspace Compose Stack
+      working-directory: playbooks
       env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         MATRIX_HOST: ${{ matrix.host }}
-        CMDB_PATH: ../cmdb/cmdb.json
-        SSH_KEY_PATH: ~/.ssh/id_deploy
-        AI_WORKSPACE_OFFLINE_MODE: ${{ needs.provision.outputs.offline_mode || 'off' }}
-        AI_WORKSPACE_AUTH_TOKEN: ${{ steps.vault.outputs.AI_WORKSPACE_AUTH_TOKEN }}
-        INFRA_REF: ${{ needs.provision.outputs.infra_ref }}
-      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_run-on-host-bootstrap.sh
+      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_deploy-ai-workspace-compose.sh
+
+    - name: Deploy Openclaw & Hermes (Systemd)
+      working-directory: playbooks
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: "False"
+        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        MATRIX_HOST: ${{ matrix.host }}
+      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_deploy-systemd-services.sh
 
 
   # ---------------------------------------------------------------------------
@@ -406,7 +406,7 @@ jobs:
         host: ${{ fromJSON(needs.provision.outputs.hosts_web_saas) }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -469,180 +469,18 @@ jobs:
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
-    - name: Install Ansible
-      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: "1.25"
-
-    - name: Build billing-service binary
-      working-directory: billing-service
-      env:
-        CGO_ENABLED: "0"
-        GOOS: linux
-        GOARCH: amd64
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_build-billing-service-binary.sh
-
-    - name: Bootstrap Docker + Caddy + shared network + stunnel certs
+    - name: Deploy Web SaaS Compose Stack
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_bootstrap-docker-caddy-shared-network-stunnel-certs.sh
-
-    - name: Checkout postgresql.svc.plus
-      uses: actions/checkout@v7
-      with:
-        repository: ai-workspace-services/postgresql.svc.plus
-        ref: main
-        path: postgresql-svc-plus
-
-      # postgresql_service 角色默认假设 postgres-extensions:17 这个镜像已经在目标
-      # 主机本地存在 (postgresql_service_postgres_pull_image 默认 false)。这不是
-      # 任何公开镜像, 是 postgresql.svc.plus 自己仓库里编译 pgvector/pg_jieba/pgmq
-      # 的自定义镜像 (deploy/base-images/postgres-runtime-wth-extensions.Dockerfile),
-      # 从没发布到任何 registry。全新主机上本地没有这个镜像, compose up 会尝试去
-      # Docker Hub 拉 "postgres-extensions" 从而 404/403。
-      # 在 runner 上构建一次 (跟 billing-service 二进制同一个思路: 自己编译,
-      # 不依赖外部产物), 再用 docker save | ssh docker load 灌进目标主机。
-    - name: Build postgres-extensions image
-      working-directory: postgresql-svc-plus
-      run: ${{ github.workspace }}/.github/scripts/common_build_postgres_extensions.sh
-
-    - name: Ship postgres-extensions image to host
-      env:
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_ship_postgres_extensions.sh
-
-      # postgresql_service 角色的 stunnel 端镜像 ghcr.io/x-evor/stunnel-server
-      # 是 GHCR 私有包 (镜像源码已收编进 x-evor/artifacts oci/stunnel-server,
-      # 由其 CI 构建发布), 全新主机没有登录态, compose up 隐式 pull 直接
-      # unauthorized。在目标主机上先用 WEB_SAAS 的 GHCR 凭据 docker login,
-      # 之后 stunnel / accounts 等私有镜像的拉取都能通过。
-    - name: Log target host into GHCR
-      env:
-        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_docker_login_ghcr.sh
-
-    - name: Deploy postgresql.svc.plus
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
-
-    - name: Deploy stunnel-client
-      working-directory: playbooks
-      env:
-        MATRIX_HOST: ${{ matrix.host }}
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-stunnel-client.sh
-
-      # web-saas 主机跑的是自己独立的 postgres 实例 (与 infra-platform 的
-      # postgres 是两台不同主机), 这台上的 account/litellm/rag 等库和专属
-      # 账号从未有人建过; vault-dataflow 重构只把这一步留在了
-      # deploy_infra_platform job 里, 导致 web-saas 独立部署时 account 库
-      # 一直不存在, "Initialize account schema when absent" 直接
-      # "database account does not exist"。
-      # create_databases_and_users.yml 的密码解析优先级是 Env > Vault > 自动生成,
-      # 而 Vault 侧的读取/写回都要求 create_databases_and_users.yml 内部拿到一个
-      # 可用的 vault_token 才会执行 (它自己再单独认证一次 Vault, 与本 job 的
-      # "Load Vault secrets" 是两条独立通路) —— 目前这条通路没有打通, 与其
-      # 依赖它, 不如直接把 ACCOUNT_DB_PASSWORD 这个已经在用的固定 Vault 密钥
-      # (kv/data/WEB_SAAS, 上面 "Load Vault secrets" 已经安全取出) 作为 Env
-      # 层显式传入, 建库和 accounts 容器两边用同一个值, 完全不依赖 Vault
-      # 读写是否打通。
-    - name: Provision account database and role
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
-
-    - name: Checkout accounts.svc.plus
-      uses: actions/checkout@v7
-      with:
-        repository: ai-workspace-services/accounts.svc.plus
-        ref: main
-        path: accounts-svc-plus
-
-      # deploy-only 模式不做数据迁移, 全新 account 库没有任何表, accounts
-      # 服务启动即 "relation users does not exist" 崩溃循环。schema.sql 是
-      # drop+recreate 的基线, 只允许在 users 表不存在时初始化一次, 绝不能
-      # 在已有数据的库上重跑。
-    - name: Initialize account schema when absent
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_initialize-account-schema-when-absent.sh
-
-    - name: Deploy accounts.svc.plus
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        ACCOUNTS_PULL_IMAGE: "true"
-          # ghcr.io/x-evor/accounts 也是私有镜像; accounts_service 角色会读
-          # GHCR_USERNAME/GHCR_PASSWORD 在目标主机上 docker login 后再 pull
-        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-        ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
-        PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
-        PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-accounts-svc-plus.sh
-
-    - name: Deploy billing-service
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         BILLING_DATABASE_URL: ${{ steps.vault.outputs.BILLING_DATABASE_URL }}
         INTERNAL_SERVICE_TOKEN: ${{ steps.vault.outputs.INTERNAL_SERVICE_TOKEN }}
-        PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
-        PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-billing-service.sh
-
-    - name: Deploy console.svc.plus
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
         GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-console-svc-plus.sh
-
-    - name: Deploy Vault (Co-located on Web SaaS)
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-vault-co-located-on-web-saas.sh
+        POSTGRES_ROOT_PASSWORD: ${{ steps.vault.outputs.POSTGRES_ROOT_PASSWORD }}
+      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_web_saas_deploy-compose.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
       working-directory: playbooks
@@ -668,7 +506,7 @@ jobs:
         host: ${{ fromJSON(needs.provision.outputs.hosts_infra_platform) }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -712,91 +550,13 @@ jobs:
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
-    - name: Install Ansible
-      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
-
-    - name: Bootstrap Docker + Caddy + shared network
+    - name: Deploy Infra Platform Compose Stack
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_bootstrap-docker-caddy-shared-network.sh
-
-    - name: Checkout postgresql.svc.plus
-      uses: actions/checkout@v7
-      with:
-        repository: ai-workspace-services/postgresql.svc.plus
-        ref: main
-        path: postgresql-svc-plus
-
-    - name: Build postgres-extensions image
-      working-directory: postgresql-svc-plus
-      run: ${{ github.workspace }}/.github/scripts/common_build_postgres_extensions.sh
-
-    - name: Ship postgres-extensions image to host
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_ship_postgres_extensions.sh
-
-    - name: Log target host into GHCR
-      env:
-        PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
-        PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
-        GHCR_USERNAME: ${{ steps.vault.outputs.GHCR_USERNAME }}
-        GHCR_PASSWORD: ${{ steps.vault.outputs.GHCR_PASSWORD }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_docker_login_ghcr.sh
-
-    - name: Deploy postgresql.svc.plus
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
-
-    - name: Provision platform databases and roles
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
-
-    - name: Deploy Gitea
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-gitea.sh
-
-    - name: Deploy Zitadel IAM
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-zitadel-iam.sh
-
-    - name: Deploy Observability Server Stack (VictoriaMetrics & Grafana)
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        MATRIX_HOST: ${{ matrix.host }}
-      run: |-
-        ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-observability-server-stack-victoriametrics-grafana.sh
+      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_infra_platform_deploy-compose.sh
 
     - name: Deploy Monitoring Agents (Vector/Node/Process)
       working-directory: playbooks
@@ -825,7 +585,7 @@ jobs:
         host: ${{ fromJSON(needs.provision.outputs.hosts_agent_proxy) }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -936,7 +696,7 @@ jobs:
         path: cmdb
 
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -1002,7 +762,7 @@ jobs:
     environment: production
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Download CMDB
       if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
