@@ -20,6 +20,14 @@ on:
     - 'v*'
   workflow_dispatch:
     inputs:
+      runner_type:
+        description: "选择 Runner 环境 (ubuntu-latest 或 self-hosted)"
+        required: true
+        default: "self-hosted"
+        type: choice
+        options:
+        - ubuntu-latest
+        - self-hosted
       infra_ref:
         description: "iac_modules & playbooks 仓库共用的 Git Ref (分支名或 Tag 均可)"
         required: false
@@ -135,7 +143,7 @@ env:
 jobs:
   provision:
     name: Resolve Profile, Provision Environment & Init Secrets
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     outputs:
       deployment_env: ${{ steps.route.outputs.deployment_env }}
       resource_file: ${{ steps.route.outputs.resource_file }}
@@ -319,7 +327,7 @@ jobs:
     # 不要对 web-saas / infra-platform 域跑这个全家桶安装器。
     needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","ai-workspace"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_ai_workspace != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -399,7 +407,7 @@ jobs:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
     needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","web-saas"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_web_saas != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -499,7 +507,7 @@ jobs:
     name: Deploy Open Platform Services on ${{ matrix.host }}
     needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","infra-platform"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_infra_platform != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -578,7 +586,7 @@ jobs:
     name: Deploy Agent Proxy Services on ${{ matrix.host }}
     needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","agent-proxy"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_agent_proxy != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -685,7 +693,7 @@ jobs:
     name: Migrate Site Data (Source -> Target)
     needs: [deploy_base, deploy_web_saas, deploy_infra_platform, deploy_agent_proxy]
     if: ${{ always() && (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && (needs.deploy_web_saas.result == 'success' || needs.deploy_web_saas.result == 'skipped') && (needs.deploy_infra_platform.result == 'success' || needs.deploy_infra_platform.result == 'skipped') && (needs.deploy_agent_proxy.result == 'success' || needs.deploy_agent_proxy.result == 'skipped') && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.toolkit_action != 'deploy' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     steps:
     - name: Download CMDB
         # 只在 provision 运行的情况下下载
@@ -758,7 +766,7 @@ jobs:
       (needs.deploy_infra_platform.result == 'success' || needs.deploy_infra_platform.result == 'skipped') &&
       (needs.deploy_agent_proxy.result == 'success' || needs.deploy_agent_proxy.result == 'skipped') &&
       (needs.data_migration.result == 'success' || needs.data_migration.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     environment: production
     steps:
     - name: Checkout repository
