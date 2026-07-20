@@ -1,0 +1,41 @@
+name: Debug Action Runner
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  VAULT_ADDR: https://vault.svc.plus
+  VAULT_ROLE: github-actions-platform-ops-toolkit-uat
+  VAULT_KV: kv/data/CICD
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Load Vault secrets
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          ignoreNotFound: true
+          secrets: |
+            ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ steps.vault.outputs.ANSIBLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      - name: Run debug commands
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy root@66.42.45.216 "sudo su - runner -c 'systemctl --user status github-runner'" || true
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy root@66.42.45.216 "sudo su - runner -c 'journalctl --user -u github-runner --no-pager -n 50'" || true
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy root@66.42.45.216 "sudo su - runner -c 'cat /home/runner/actions-runner/_diag/*.log | tail -n 50'" || true
