@@ -474,6 +474,8 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
+      env:
+        MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
@@ -628,6 +630,8 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
+      env:
+        MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
