@@ -23,7 +23,7 @@ on:
       runner_type:
         description: "选择 Runner 环境 (ubuntu-latest 或 self-hosted)"
         required: true
-        default: "self-hosted"
+        default: "ubuntu-latest"
         type: choice
         options:
         - ubuntu-latest
