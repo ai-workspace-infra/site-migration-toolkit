@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-ansible-playbook -i ../cmdb/inventory.ini deploy_action_runner.yml \
+AI_WORKSPACE_CMDB_JSON=../cmdb/cmdb.json \
+ansible-playbook -i inventory/terraform_cmdb.py deploy_action_runner.yml \
   --limit $MATRIX_HOST \
   -e "runner_engine=${RUNNER_ENGINE}" \
   -e "github_org_repo=${GITHUB_ORG_REPO}" \
