@@ -3,6 +3,10 @@ name: Deploy Action Runner (IaC + Ansible)
 on:
   workflow_dispatch:
     inputs:
+      toolkit_ref:
+        description: "platform-ops-toolkit 仓库的 Git Ref (例如 main, v1.0.0)。用于跨 Tag 触发时拉取指定代码"
+        required: false
+        type: string
       infra_ref:
         description: "ai-workspace-infra git ref (iac_modules + playbooks)"
         required: false
@@ -165,6 +169,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
       - name: Checkout playbooks
         uses: actions/checkout@v7
