@@ -49,7 +49,7 @@ env:
   VAULT_ADDR: https://vault.svc.plus
   VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event.inputs.vault_env_path }}
   VAULT_KV: kv/data/CICD
-  VAULT_KV_ACTION_RUNNER: kv/data/${{ github.event.inputs.vault_env_path }}/action-runner
+  VAULT_KV_ACTION_RUNNER: kv/data/action-runner
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
   ENV_DIR: infra/iac_modules/terraform-hcl-standard/vultr-vps/envs/platform-ops-toolkit
   PLAYBOOKS_DIR: infra/playbooks
