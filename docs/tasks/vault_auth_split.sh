@@ -29,6 +29,12 @@ path "kv/metadata/CICD" {
 path "kv/data/openclaw" {
   capabilities = ["read"]
 }
+path "kv/data/action-runner" {
+  capabilities = ["read"]
+}
+path "kv/metadata/action-runner" {
+  capabilities = ["list", "read"]
+}
 path "kv/data/sit/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
@@ -48,6 +54,12 @@ path "kv/metadata/CICD" {
 }
 path "kv/data/openclaw" {
   capabilities = ["read"]
+}
+path "kv/data/action-runner" {
+  capabilities = ["read"]
+}
+path "kv/metadata/action-runner" {
+  capabilities = ["list", "read"]
 }
 path "kv/data/WEB_SAAS" {
   capabilities = ["read"]
@@ -74,6 +86,12 @@ path "kv/metadata/CICD" {
 }
 path "kv/data/openclaw" {
   capabilities = ["read"]
+}
+path "kv/data/action-runner" {
+  capabilities = ["read"]
+}
+path "kv/metadata/action-runner" {
+  capabilities = ["list", "read"]
 }
 path "kv/data/WEB_SAAS" {
   capabilities = ["read"]
