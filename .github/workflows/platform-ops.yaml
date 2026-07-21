@@ -37,6 +37,10 @@ on:
         required: false
         default: "main"
         type: string
+      toolkit_ref:
+        description: "platform-ops-toolkit 仓库的 Git Ref (例如 main, v1.0.0)。用于跨 Tag 触发时拉取指定代码"
+        required: false
+        type: string
       console_ref:
         description: "xworkspace-console 仓库的 Git Ref (例如 main, v1.1.5, v1.1.4)"
         required: false
@@ -175,6 +179,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Route ref to an explicit profile
       id: route
@@ -339,6 +345,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Checkout xworkspace-console helpers
       uses: actions/checkout@v7
@@ -419,6 +427,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -521,6 +531,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -600,6 +612,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -713,6 +727,8 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Checkout playbooks
       uses: actions/checkout@v7
@@ -779,6 +795,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Download CMDB
       if: ${{ github.event.inputs.run_provision_and_deploy == 'true' }}
