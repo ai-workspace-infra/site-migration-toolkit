@@ -12,6 +12,18 @@
 - ⚡ **原生增量与断点续传**：深度整合底层 `aws s3 sync` 增量比对协议，在动辄几十 GB 大文件或跨国弱网环境中，天然免疫网络闪断。
 - 📦 **Docker 镜像真空打包**：针对目标集群可能遭遇的镜像拉取限流（如 DockerHub Rate Limit），支持在源端一键 `docker save` 存活镜像并直推 S3，在无外网环境下亦可极速冷启动。
 
+## 🔐 Vault OIDC 鉴权与策略隔离 (Vault Authentication & Policies)
+
+为了在 CI/CD 部署时确保各个环境的凭证安全隔离，我们设计了三套平行的 Vault 策略 (Policies) 与 OIDC JWT 角色 (Roles)。您可通过执行 `docs/tasks/vault_auth_split.sh` 脚本在 Vault 中一键初始化该体系：
+
+| 环境 (Env) | Vault 策略 (Policy) | Vault JWT 角色 (Role) | 绑定的 GitHub Git Ref 限制 (Bound Claims) |
+| :--- | :--- | :--- | :--- |
+| **SIT** | `github-actions-platform-ops-toolkit-sit` | `github-actions-platform-ops-toolkit-sit` | 无严苛限制（允许 `repository` 内的任意分支获取权限） |
+| **UAT** | `github-actions-platform-ops-toolkit-uat` | `github-actions-platform-ops-toolkit-uat` | 严格绑定 **`main`** 分支，拒绝其他分支越权读取 |
+| **PROD** | `github-actions-platform-ops-toolkit-prod` | `github-actions-platform-ops-toolkit-prod` | 严格绑定 **`release/*`** 分支与 **`v*`** (Tags) 标签 |
+
+*脚本执行路径：* `bash docs/tasks/vault_auth_split.sh` (需具备 Vault Admin Token 并在同终端中执行)
+
 ## 🛠️ 技术栈与生态圈 (Technology Stack)
 
 - **核心编排引擎**: Ansible / Ansible Vault
