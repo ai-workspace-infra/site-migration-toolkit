@@ -12,12 +12,16 @@ on:
   # an isolated UAT web-saas environment; stable refs select production.
   pull_request:
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - '.github/workflows/deploy-action-runner-iac.yaml'
   push:
     branches:
     - main
     - 'release/**'
     tags:
     - 'v*'
+    paths-ignore:
+      - '.github/workflows/deploy-action-runner-iac.yaml'
   workflow_dispatch:
     inputs:
       runner_type:
