@@ -102,11 +102,28 @@ on:
         - 2C4G
         - 1C2G
       action:
-        description: "执行动作 (deploy:仅部署服务 | destroy:销毁 | migrate/backup/restore:数据操作)"
+        description: "执行动作 (resize 会用替代实例完成降配，并在接管 Terraform state 后继续部署)"
         required: true
         default: "deploy"
         type: choice
-        options: [deploy, destroy, migrate, backup, restore]
+        options: [deploy, resize, destroy, migrate, backup, restore]
+      resize_instance_id:
+        description: "resize 时的现有 Vultr instance ID"
+        required: false
+        type: string
+      resize_target_domain:
+        description: "resize 健康检查和可选 DNS 切换使用的完整域名"
+        required: false
+        type: string
+      confirm_resize:
+        description: "危险：确认创建替代实例以执行 VPS 降配"
+        required: false
+        default: false
+        type: boolean
+      resize_cloudflare_zone_id:
+        description: "仅 confirm_dns_switch=true 时必填"
+        required: false
+        type: string
       confirm_dns_switch:
         description: "危险: 勾选此项将在最后一步接管原域名的生产流量 (仅真实灾备启用)"
         required: false
@@ -165,8 +182,27 @@ env:
   PLAYBOOKS_DIR: infra/playbooks
 
 jobs:
+  resize:
+    name: Replace VPS for a guarded downgrade
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'resize' }}
+    uses: ./.github/workflows/resize-instance.yaml
+    with:
+      vault_env_path: ${{ inputs.vault_env_path }}
+      target_domain: ${{ inputs.resize_target_domain }}
+      instance_id: ${{ inputs.resize_instance_id }}
+      target_plan: ${{ inputs.instance_plan == '1C2G' && 'vc2-1c-2gb' || inputs.instance_plan == '2C4G' && 'vc2-2c-4gb' || 'vc2-4c-8gb' }}
+      resize_mode: auto
+      confirm_resize: ${{ inputs.confirm_resize }}
+      switch_dns: ${{ inputs.confirm_dns_switch }}
+      cloudflare_zone_id: ${{ inputs.resize_cloudflare_zone_id }}
+      destroy_old_instance: false
+      observation_seconds: "1800"
+      infra_ref: ${{ inputs.infra_ref || 'main' }}
+
   provision:
     name: Resolve Profile, Provision Environment & Init Secrets
+    needs: resize
+    if: ${{ always() && (needs.resize.result == 'success' || needs.resize.result == 'skipped') }}
     runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     outputs:
       deployment_env: ${{ steps.route.outputs.deployment_env }}
@@ -302,6 +338,19 @@ jobs:
         TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_terraform-init.sh
+
+    - name: Adopt replacement instance into Terraform state
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && github.event_name == 'workflow_dispatch' && inputs.action == 'resize' && needs.resize.outputs.direction == 'downgrade'
+      working-directory: ${{ env.ENV_DIR }}
+      env:
+        ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_WORKSPACE: ${{ steps.route.outputs.terraform_workspace }}
+        SOURCE_INSTANCE_ID: ${{ inputs.resize_instance_id }}
+        REPLACEMENT_INSTANCE_ID: ${{ needs.resize.outputs.replacement_id }}
+        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
+        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
+        TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
+      run: |-
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_adopt-resize-replacement.sh
 
     - name: Terraform Apply / Destroy
       if: steps.route.outputs.run_provision_and_deploy == 'true'
