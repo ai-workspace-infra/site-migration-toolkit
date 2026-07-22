@@ -97,8 +97,7 @@ jobs:
           jwtGithubAudience: vault
           exportToken: true
           secrets: |
-            ${{ env.VAULT_KV_BASE }} VULTR_API_KEY | VULTR_API_KEY ;
-            ${{ env.VAULT_KV_BASE }} CLOUDFLARE_API_TOKEN | CLOUDFLARE_API_TOKEN
+            ${{ env.VAULT_KV_BASE }} VULTR_API_KEY | VULTR_API_KEY
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -146,10 +145,22 @@ jobs:
           TARGET_DOMAIN: ${{ inputs.target_domain }}
         run: ${{ github.workspace }}/.github/scripts/resize-instance_healthcheck.sh
 
+      - name: Load Cloudflare credential for DNS cutover
+        id: cloudflare
+        if: inputs.switch_dns && steps.preflight.outputs.direction == 'downgrade'
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          secrets: |
+            ${{ env.VAULT_KV_BASE }} CLOUDFLARE_API_TOKEN | CLOUDFLARE_API_TOKEN
+
       - name: Switch DNS after health check
         if: inputs.switch_dns && steps.preflight.outputs.direction == 'downgrade'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ steps.cloudflare.outputs.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ inputs.cloudflare_zone_id }}
           TARGET_DOMAIN: ${{ inputs.target_domain }}
           REPLACEMENT_IP: ${{ steps.terraform.outputs.replacement_ip }}
