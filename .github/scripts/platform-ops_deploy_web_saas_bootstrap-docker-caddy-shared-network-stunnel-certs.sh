@@ -1,4 +1,12 @@
 #!/bin/bash
+set -euo pipefail
+
+# First host-mutating step of the web-saas sequence. Assert the target actually
+# resolves and is reachable before anything runs — ansible-playbook exits 0 on a
+# zero-host match, which would let the whole sequence no-op to a green check.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${DIR}/common_assert_ansible_host.sh" ../cmdb/inventory.ini "${MATRIX_HOST}"
+
 cat > /tmp/web-saas-bootstrap.yml <<'EOF'
 - name: Ensure Docker engine, Caddy, shared network, and stunnel certs exist
   hosts: "{{ target_host }}"
