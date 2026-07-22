@@ -41,7 +41,10 @@ else
   if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
     deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
     state_key=platform-ops-toolkit/sit/all-in-one.tfstate; run=true; target_domains=all
-    terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
+    # PR 只做 terraform plan, 不 apply。四个 deploy job 都要求
+    # terraform_action == 'apply', 所以 plan 会让它们全部 skip ——
+    # PR 仍然校验 terraform 配置, 但不再创建真实 VPS。
+    terraform_action=plan; toolkit_action=none; infra_ref=main; console_ref=main; offline_mode=off
     source_host=install.svc.plus; source_domain_base=svc.plus; target_domain_base=svc.plus; env_suffix=-sit; confirm_dns_switch=false
   else
     case "${GITHUB_REF}" in
