@@ -1,4 +1,7 @@
 #!/bin/bash
+set -eo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/common_require_env.sh"
+require_env MATRIX_HOST BILLING_DATABASE_URL INTERNAL_SERVICE_TOKEN
 jq -n \
   --arg artifact "${GITHUB_WORKSPACE}/billing-service/dist/billing-service-linux-amd64" \
   --arg image_ref "ghcr.io/ai-workspace-services/billing-service:${GITHUB_SHA}" \

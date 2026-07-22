@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/common_require_env.sh"
+require_env MATRIX_HOST
 
 # cwd is the playbooks checkout (working-directory: playbooks); the CMDB artifact
 # is downloaded to <repo-root>/cmdb, i.e. ../cmdb from here.

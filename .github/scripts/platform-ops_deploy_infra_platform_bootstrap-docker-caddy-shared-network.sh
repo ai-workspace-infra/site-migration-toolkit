@@ -1,4 +1,7 @@
 #!/bin/bash
+set -eo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/common_require_env.sh"
+require_env MATRIX_HOST
 cat > /tmp/infra-platform-bootstrap.yml <<'EOF'
 - name: Ensure Docker engine, Caddy, and shared network exist
   hosts: "{{ target_host }}"

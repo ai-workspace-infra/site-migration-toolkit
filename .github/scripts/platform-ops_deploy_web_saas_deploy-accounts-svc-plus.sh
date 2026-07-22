@@ -1,4 +1,7 @@
 #!/bin/bash
+set -eo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/common_require_env.sh"
+require_env MATRIX_HOST PROVISION_ENV_SUFFIX PROVISION_TARGET_DOMAIN_BASE
 # 角色默认的 Caddy 站点写死 accounts.svc.plus / svc.plus, 迁移环境
 # 必须按目标域参数化, 否则 fragment 服务的是源站域名
 jq -n \

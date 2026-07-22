@@ -1,4 +1,7 @@
 #!/bin/bash
+set -eo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/common_require_env.sh"
+require_env MATRIX_HOST
 cat > /tmp/agent-proxy-bootstrap.yml <<'EOF'
 - name: Bootstrap Caddy and Xray binary on Agent Proxy Node
   hosts: "{{ target_host }}"
