@@ -1,6 +1,51 @@
 name: Resize Instance
 
 on:
+  workflow_call:
+    inputs:
+      vault_env_path:
+        required: true
+        type: string
+      target_domain:
+        required: true
+        type: string
+      instance_id:
+        required: true
+        type: string
+      target_plan:
+        required: true
+        type: string
+      resize_mode:
+        required: true
+        type: string
+      confirm_resize:
+        required: true
+        type: boolean
+      switch_dns:
+        required: true
+        type: boolean
+      cloudflare_zone_id:
+        required: false
+        type: string
+      destroy_old_instance:
+        required: true
+        type: boolean
+      observation_seconds:
+        required: true
+        type: string
+      infra_ref:
+        required: true
+        type: string
+    outputs:
+      direction:
+        description: "Detected resize direction."
+        value: ${{ jobs.resize.outputs.direction }}
+      replacement_id:
+        description: "Replacement instance ID for a downgrade."
+        value: ${{ jobs.resize.outputs.replacement_id }}
+      replacement_ip:
+        description: "Replacement IPv4 address for a downgrade."
+        value: ${{ jobs.resize.outputs.replacement_ip }}
   workflow_dispatch:
     inputs:
       vault_env_path:
@@ -62,20 +107,24 @@ permissions:
   id-token: write
 
 concurrency:
-  group: resize-instance-${{ github.event.inputs.vault_env_path }}-${{ github.event.inputs.instance_id }}
+  group: resize-instance-${{ inputs.vault_env_path }}-${{ inputs.instance_id }}
   cancel-in-progress: false
 
 env:
   VAULT_ADDR: https://vault.svc.plus
-  VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path }}
-  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event.inputs.vault_env_path }}
-  VAULT_KV_BASE: kv/data/CICD/${{ github.event.inputs.vault_env_path }}
+  VAULT_ENV_PATH: ${{ inputs.vault_env_path }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ inputs.vault_env_path }}
+  VAULT_KV_BASE: kv/data/CICD/${{ inputs.vault_env_path }}
 
 jobs:
   resize:
     name: Resize ${{ inputs.target_domain }}
     runs-on: ubuntu-latest
     environment: resize-${{ inputs.vault_env_path }}
+    outputs:
+      direction: ${{ steps.preflight.outputs.direction }}
+      replacement_id: ${{ steps.terraform.outputs.replacement_id }}
+      replacement_ip: ${{ steps.terraform.outputs.replacement_ip }}
     steps:
       - name: Checkout toolkit
         uses: actions/checkout@v7
