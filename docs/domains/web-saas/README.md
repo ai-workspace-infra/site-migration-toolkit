@@ -53,17 +53,28 @@ provision 出来的主机上。
 | `BILLING_DATABASE_URL` | billing-service 的完整 Postgres 连接串（`postgres://user:pass@stunnel-client:15432/db?sslmode=disable`），可以复用 `account_user`/`account`，也可以单独建一个账号。 |
 | `INTERNAL_SERVICE_TOKEN` | billing-service 内部服务间鉴权 token。 |
 
-**公共服务**密钥放在共享的 `kv/data/CICD`（不按环境拆分，见
-[vault_authentication_and_policy_isolation.md](../../vault/vault_authentication_and_policy_isolation.md)）：
+**公共服务**密钥放在共享的 `kv/data/CICD`（三个环境共读、只读不可改）：
 
 | Key (`kv/data/CICD`) | 说明 |
 |---|---|
 | `GHCR_USERNAME` | 拉取 `ghcr.io/x-evor/*`、`ghcr.io/ai-workspace-services/*` 私有镜像用的 GHCR 用户名。 |
 | `GHCR_TOKEN` | 对应的 GHCR token。workflow 里映射为 `GHCR_PASSWORD` 环境变量（脚本消费的是这个名字）。 |
+
+**基础凭据**按环境拆分在 `kv/data/CICD/<env>`（各 role 只读自己那份）：
+
+| Key (`kv/data/CICD/{sit,uat,prod}`) | 说明 |
+|---|---|
 | `SSH_PRIVATE_DEPLOY_KEY_B64` | ansible 连目标主机用的部署私钥。 |
+| `VULTR_API_KEY` | provision 阶段创建主机用的云账号 API key。 |
+| `TF_STATE_*` | Terraform state 后端的访问凭据。 |
+
+workflow 里对应两个变量：`VAULT_KV`（公共服务）与 `VAULT_KV_BASE`（本环境基础凭据）。
+分层理由与 KV v2 的路径匹配语义见
+[vault_authentication_and_policy_isolation.md §2](../../vault/vault_authentication_and_policy_isolation.md)。
 
 > GHCR 凭据曾经放在 `kv/data/WEB_SAAS`，现已统一到 `kv/data/CICD`——镜像拉取是
-> 所有域共用的公共能力，没有按环境区分的意义。
+> 所有域共用的公共能力，没有按环境区分的意义。而 SSH 私钥、云账号 key 授予的是
+> 登录主机和控制基础设施的能力，是提权的实际载体，因此按环境隔离。
 
 这些 key 都需要提前在 Vault 里手动填好真实值。缺 web-saas 专属键时，
 `Validate environment-scoped web-saas secrets` 这一步会在任何部署动作发生**之前**
