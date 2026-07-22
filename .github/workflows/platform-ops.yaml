@@ -138,7 +138,14 @@ env:
   DEPLOY_ENV: ${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}
   VAULT_ENV_PATH: ${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}
   VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}
+  # 公共服务 secret: 三个环境共读、只读不可改 (GHCR 镜像拉取凭据等)。
+  # 拉的是同一批镜像, 不存在环境维度, 不拆分。
   VAULT_KV: kv/data/CICD
+  # 基础凭据: 按环境拆分, 各 role 只读自己那份。
+  # VULTR_API_KEY / TF_STATE_* / SSH_PRIVATE_DEPLOY_KEY_B64 授予的是"控制基础
+  # 设施"和"登录主机"的能力, 是提权的实际载体, 必须隔离 —— sit 失陷不应拿到
+  # prod 的云账号与主机私钥。(env 上下文不能在 env: 块内自引用, 故重复三元式)
+  VAULT_KV_BASE: kv/data/CICD/${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}
   VAULT_KV_OPENCLAW: kv/data/openclaw
   VAULT_KV_WEB_SAAS: kv/data/WEB_SAAS
   VAULT_KV_DATABASES: kv/data/${{ github.event_name == 'pull_request' && 'sit' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && 'uat') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && 'prod') || github.event.inputs.vault_env_path }}/databases
@@ -213,12 +220,12 @@ jobs:
         ignoreNotFound: true
         exportToken: true
         secrets: |
-          ${{ env.VAULT_KV }} VULTR_API_KEY | VULTR_API_KEY ;
-          ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
-          ${{ env.VAULT_KV }} TF_STATE_BUCKET | TF_STATE_BUCKET ;
-          ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
-          ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
-          ${{ env.VAULT_KV }} TF_STATE_REGION | TF_STATE_REGION
+          ${{ env.VAULT_KV_BASE }} VULTR_API_KEY | VULTR_API_KEY ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_BUCKET | TF_STATE_BUCKET ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_REGION | TF_STATE_REGION
 
     - name: Checkout iac_modules
       if: steps.route.outputs.run_provision_and_deploy == 'true'
@@ -370,7 +377,7 @@ jobs:
         jwtGithubAudience: vault
         ignoreNotFound: true
         secrets: |
-          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
           ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN
 
     - name: Configure SSH Key
@@ -461,7 +468,7 @@ jobs:
         jwtGithubAudience: vault
         ignoreNotFound: true
         secrets: |
-          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
           ${{ env.VAULT_KV_WEB_SAAS }} BILLING_DATABASE_URL | BILLING_DATABASE_URL ;
           ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
           ${{ env.VAULT_KV }} GHCR_USERNAME | GHCR_USERNAME ;
@@ -724,7 +731,7 @@ jobs:
         jwtGithubAudience: vault
         ignoreNotFound: true
         secrets: |
-          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
           ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
           ${{ env.VAULT_KV }} GHCR_USERNAME | GHCR_USERNAME ;
           ${{ env.VAULT_KV }} GHCR_TOKEN | GHCR_PASSWORD ;
@@ -804,7 +811,7 @@ jobs:
         jwtGithubAudience: vault
         ignoreNotFound: true
         secrets: |
-          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
           ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | INTERNAL_SERVICE_TOKEN ;
           ${{ env.VAULT_KV_AGENT_PROXY }} xray_uuid | XRAY_UUID
 
@@ -915,12 +922,12 @@ jobs:
         jwtGithubAudience: vault
         ignoreNotFound: true
         secrets: |
-          ${{ env.VAULT_KV }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-          ${{ env.VAULT_KV }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET ;
-          ${{ env.VAULT_KV }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY ;
-          ${{ env.VAULT_KV }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY ;
-          ${{ env.VAULT_KV }} TF_STATE_REGION | MIGRATION_S3_REGION ;
-          ${{ env.VAULT_KV }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT ;
+          ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_REGION | MIGRATION_S3_REGION ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT ;
 
     - name: Configure SSH Key
       run: |-

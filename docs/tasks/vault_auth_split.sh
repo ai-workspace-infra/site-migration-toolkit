@@ -57,19 +57,42 @@ EOF
 # -----------------------------------------------------------------------------
 # Policies
 #
-# PHASE 1 (当前): 同时授予新的按环境路径 kv/data/CICD/<env> 和旧的共享
-#   kv/data/CICD, 保证迁移期间流水线不中断。
-# PHASE 2 (数据迁移完成后): 删掉下面标了 "LEGACY" 的两段, 再跑一次本脚本。
-#   届时 sit 被攻破只会泄露 sit 自己的云凭据, 而不是全环境的。
+# 路径分三层:
 #
-# ⚠️ PHASE 2 的前提不是改 policy, 而是先真正准备好"每个环境各自独立的凭据":
-#   独立的 Vultr API key、独立的 TF state 访问密钥、独立的 SSH 部署密钥对。
-#   如果三个环境共用同一把 SSH 私钥, 那么无论 Vault 路径怎么拆, sit 失陷
-#   仍然等于 prod 失陷 —— 拆路径只是把凭据复用问题暴露出来, 不能替代换密钥。
+#   1. 公共服务 secret —— 三个环境共读, 只读不可改:
+#        kv/data/CICD          GHCR 镜像拉取凭据(GHCR_USERNAME / GHCR_TOKEN)
+#        kv/data/openclaw
+#        kv/data/action-runner
+#      拉的是同一批镜像, 不存在"环境"这个维度, 拆三份只会产生三份要同步轮换
+#      的副本。这一层**只给 read**, 任何 role 都不能写 —— 公共资产不允许被
+#      任何单一环境的流水线改动。
+#
+#   2. 基础凭据 —— 按环境拆分, 各 role 只读自己那份, 同样只读:
+#        kv/data/CICD/<env>    VULTR_API_KEY / TF_STATE_* / SSH_PRIVATE_DEPLOY_KEY_B64
+#      这些凭据授予的是"控制基础设施"和"登录主机"的能力, 是提权的实际载体,
+#      必须按环境隔离: sit 失陷不应该拿到 prod 的云账号和主机私钥。
+#      注意 KV v2 里 kv/data/CICD 与 kv/data/CICD/<env> 是两个独立的 secret,
+#      而 policy 里 path "kv/data/CICD" 只精确匹配根路径、不匹配子路径,
+#      所以"共读根 + 只读自己那份子路径"可以严格成立。
+#
+#   3. 环境专属业务密钥 —— 严格隔离, 可读写:
+#        kv/data/<env>/*       该环境自己的业务密钥
+#
+# 另外: 绑定收紧(job_workflow_ref 白名单 + 各自 ref)与本层路径隔离是两道
+# 独立的防线。绑定决定"谁能换到 token", 路径决定"换到之后能看到什么"。
 # -----------------------------------------------------------------------------
 
+# 第 1 层: 公共服务 secret —— 三个环境共读, 只给 read, 不可修改。
 emit_common_read_paths() {
   cat <<'EOF'
+# 公共服务凭据(GHCR 镜像拉取等)。全平台共用, 不存在环境维度, 不拆分。
+# 只读: 公共资产不允许被任何单一环境的流水线改动。
+path "kv/data/CICD" {
+  capabilities = ["read"]
+}
+path "kv/metadata/CICD" {
+  capabilities = ["list", "read"]
+}
 path "kv/data/openclaw" {
   capabilities = ["read"]
 }
@@ -82,33 +105,35 @@ path "kv/metadata/action-runner" {
 EOF
 }
 
-# $1 = env name (sit|uat|prod)
-emit_env_policy() {
+# 第 2 层: 基础凭据 —— 只读, 且只读自己环境那一份。
+# $1 = env name
+emit_base_credential_paths() {
   local env="$1"
-
   cat <<EOF
-# ${env} environment: 该环境自己的 CI/CD 基础凭据
+
+# 本环境的基础凭据(云账号 API key / TF state 后端凭据 / SSH 部署私钥)。
+# 只精确授予 kv/data/CICD/${env}, 因此读不到其他环境的同类凭据。
+# 同样只给 read: 流水线消费凭据, 不负责轮换凭据。
 path "kv/data/CICD/${env}" {
   capabilities = ["read"]
 }
 path "kv/metadata/CICD/${env}" {
   capabilities = ["list", "read"]
 }
-
-# LEGACY (PHASE 1 only) —— 迁移完成后删除这两段
-path "kv/data/CICD" {
-  capabilities = ["read"]
-}
-path "kv/metadata/CICD" {
-  capabilities = ["list", "read"]
-}
 EOF
+}
+
+# $1 = env name (sit|uat|prod)
+emit_env_policy() {
+  local env="$1"
 
   emit_common_read_paths
+  emit_base_credential_paths "${env}"
 
   # WEB_SAAS 目前是 uat / prod 共读(内含 POSTGRES_ROOT_PASSWORD /
-  # ACCOUNT_DB_PASSWORD 等)。这意味着 uat 与 prod 共用同一套数据库口令,
-  # 属于与 CICD 同类的跨环境凭据复用问题, 后续应同样按环境拆分。
+  # ACCOUNT_DB_PASSWORD 等), 即 uat 与 prod 共用同一套数据库口令。这与
+  # kv/data/CICD 不同 —— 数据库口令是环境专属的业务密钥, 不是公共服务凭据,
+  # 后续应拆分为 kv/data/<env>/web-saas。
   if [ "${env}" != "sit" ]; then
     cat <<'EOF'
 path "kv/data/WEB_SAAS" {
@@ -194,8 +219,9 @@ ${ALLOWED_WORKFLOWS}
 EOF
 }
 
-# sit: PR 验证 + 非 main 分支的 workflow_dispatch。ref 仍然较宽, 真正的收敛
-# 来自 job_workflow_ref 白名单, 以及 PHASE 2 之后 sit 只能读自己的凭据。
+# sit: PR 验证 + 非 main 分支的 workflow_dispatch。ref 仍然较宽(PR 与分支都要
+# 放行), 真正的收敛来自 job_workflow_ref 白名单 —— 换 token 只能通过本仓库
+# 已有的 5 个 workflow, 自己新加一个 workflow 是换不到的。
 echo "Creating SIT role (PR + branch dispatch)..."
 write_role sit github-actions-platform-ops-toolkit-sit \
   '["refs/pull/*/merge", "refs/heads/*"]'
@@ -217,10 +243,23 @@ vault delete auth/jwt/role/github-actions-platform-ops-toolkit-prod-tags 2>/dev/
   || echo "  (not present, nothing to remove)"
 
 echo
-echo "Done."
+echo "Done. 3 个 policy + 3 个 role 已生效, 死角色 -prod-tags 已清理。"
 echo
-echo "PHASE 1 完成。接下来要做的(按顺序):"
-echo "  1. 为每个环境生成各自独立的凭据(Vultr API key / TF state 密钥 / SSH 部署密钥对)。"
-echo "  2. 写入 kv/CICD/sit、kv/CICD/uat、kv/CICD/prod。"
-echo "  3. 把 workflow 里的 VAULT_KV 从 kv/data/CICD 改为 kv/data/CICD/\${DEPLOY_ENV}。"
-echo "  4. 删除本脚本中标记 LEGACY 的两段, 重新执行, 收回对共享 kv/data/CICD 的读权限。"
+echo "注意行为变更: prod 现在只接受 v* tag。workflow_dispatch 选 prod 会认证失败,"
+echo "这与分支规范'生产部署只经 annotated tag'一致。"
+echo
+echo "⚠️ 基础凭据迁移必须按序执行, 否则流水线会读到空值:"
+echo "  1. 先写数据: 为每个环境在 kv/CICD/{sit,uat,prod} 写入各自的"
+echo "     VULTR_API_KEY / TF_STATE_* / SSH_PRIVATE_DEPLOY_KEY_B64。"
+echo "  2. 应用本脚本(policy 生效)。"
+echo "  3. 合并 workflow 侧的 VAULT_KV_BASE 改动。"
+echo "  4. 最后从根路径 kv/CICD 删掉已搬走的基础凭据, 只留 GHCR 等公共服务键。"
+echo
+echo "  第 1 步可以先把现有同一份凭据复制到三个路径下让链路先跑通, 但真正的隔离"
+echo "  收益要等三个环境换成各自独立的凭据(独立 Vultr API key / 独立 SSH 密钥对)"
+echo "  才成立。在那之前, 路径已隔离但凭据仍复用。"
+echo
+echo "后续待办(未包含在本脚本中):"
+echo "  - kv/data/WEB_SAAS 目前由 uat 与 prod 共读, 内含数据库口令。数据库口令属于"
+echo "    环境专属业务密钥(不同于 kv/data/CICD 那类公共服务凭据), 应拆分为"
+echo "    kv/data/<env>/web-saas, 让两个环境不再共用同一套口令。"

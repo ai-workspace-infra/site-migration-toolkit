@@ -1,26 +1,42 @@
 # Site Migration Toolkit: 基于 AI 驱动的站点级自动化迁移容灾解决方案
 
-**Site Migration Toolkit** 绝不仅仅是一条普通的 CI/CD 流水线，而是一套面向现代化基础设施和高并发应用集群的**开源级自动化搬站与容灾解决方案**。
+**Site Migration Toolkit** 是一套面向跨云 / 跨主机场景的自动化搬站与容灾工具包，覆盖环境 provision、服务部署与站点数据迁移。
 
-在面对跨云、跨主机迁移等高风险、重载场景时，它彻底摒弃了传统的本地打包中转模式，创新性地依托 **S3 对象存储作为高速流式传输隧道**，并深度结合 **HashiCorp Vault 动态 JWT 鉴权**，实现全链路的“零本地磁盘占用”与“零密钥明文落盘”。无论是 TB 级体量的 Gitea 源码库、重型 PostgreSQL 业务数据库集群、复杂的 Docker 容器镜像集，还是 AI 应用的持久化工作区数据，本工具包均能提供安全、智能、极速的“平滑数据漂移”。
+在跨云、跨主机迁移这类高风险重载场景下，它以 **S3 对象存储作为流式传输中转**，避免在源端本地打包落盘；凭证经 **HashiCorp Vault OIDC JWT** 在运行时动态获取，不使用持久化的 GitHub Actions Secrets。支持的数据类型包括 Gitea 源码库、PostgreSQL 业务库、Docker 镜像集，以及 AI 应用的持久化工作区数据。
 
 ## 🌟 核心理念与特性 (Core Features)
 
-- 🤖 **AI 驱动的架构自进化**：不仅迁移数据，更通过大模型自动化生成迁移策略、动态渲染复杂配置文件（如跨域 Caddy Domain 级联重写）。
-- 🌊 **极致的流式中转 (Zero-Disk Overhead)**：彻底消灭由于 `tar` 打包引发的“源服务器磁盘打爆”事故。全程基于 Linux Pipes 与 S3 底层网络，导出数据瞬间上云，目标端“边下边解”，**对服务器磁盘容量实现零附加要求**。
-- 🛡️ **Vault 零信任安全底座**：彻底告别 `.env` 或静态密钥配置文件。在迁移时瞬间向 `HashiCorp Vault` 发起 JWT 短期认证，提取 S3 AK/SK 凭证放入运行时内存，任务结束凭证即焚。
-- ⚡ **原生增量与断点续传**：深度整合底层 `aws s3 sync` 增量比对协议，在动辄几十 GB 大文件或跨国弱网环境中，天然免疫网络闪断。
-- 📦 **Docker 镜像真空打包**：针对目标集群可能遭遇的镜像拉取限流（如 DockerHub Rate Limit），支持在源端一键 `docker save` 存活镜像并直推 S3，在无外网环境下亦可极速冷启动。
+- 🤖 **AI 辅助的配置生成**：借助大模型生成迁移策略、渲染复杂配置文件（如跨域 Caddy Domain 级联重写）。
+- 🌊 **流式中转，避免源端打包落盘**：基于 Linux Pipes 与 S3，导出即上传、目标端边下边解，规避 `tar` 本地打包把源服务器磁盘写满的问题。传输过程本身不额外占用源端磁盘（容器与数据库自身的临时空间仍需预留）。
+- 🛡️ **凭证经 Vault 动态下发**：不使用持久化的 GitHub Actions Secrets 或静态 `.env` 密钥文件。运行时经 OIDC JWT 换取短期 token 读取 S3 AK/SK，token 为不可续期的 `batch` 类型并随 TTL 过期。
+  > 注意：这指的是**凭证来源**不落盘。部分部署环节仍会把渲染后的 `app.env` 等配置写入目标主机，那是服务运行所必需的，不在此范围内。
+- ⚡ **增量同步与断点续传**：基于 `aws s3 sync` 的增量比对，大文件或弱网环境下中断后可续传，减少重传成本。
+- 📦 **Docker 镜像离线投递**：针对镜像拉取限流（如 DockerHub Rate Limit）或目标端无外网的情况，支持源端 `docker save` 后经 S3 投递，目标端直接 `docker load`。
 
 ## 🔐 Vault OIDC 鉴权与策略隔离 (Vault Authentication & Policies)
 
 为了在 CI/CD 部署时确保各个环境的凭证安全隔离，我们设计了三套平行的 Vault 策略 (Policies) 与 OIDC JWT 角色 (Roles)。您可通过执行 `docs/tasks/vault_auth_split.sh` 脚本在 Vault 中一键初始化该体系：
 
-| 环境 (Env) | Vault 策略 (Policy) | Vault JWT 角色 (Role) | 绑定的 GitHub Git Ref 限制 (Bound Claims) |
-| :--- | :--- | :--- | :--- |
-| **SIT** | `github-actions-platform-ops-toolkit-sit` | `github-actions-platform-ops-toolkit-sit` | 无严苛限制（允许 `repository` 内的任意分支获取权限） |
-| **UAT** | `github-actions-platform-ops-toolkit-uat` | `github-actions-platform-ops-toolkit-uat` | 严格绑定 **`main`** 分支，拒绝其他分支越权读取 |
-| **PROD** | `github-actions-platform-ops-toolkit-prod` | `github-actions-platform-ops-toolkit-prod` | 严格绑定 **`release/*`** 分支与 **`v*`** (Tags) 标签 |
+| 环境 (Env) | Vault 策略 / JWT 角色 | 绑定的 Git Ref (`bound_claims.ref`) |
+| :--- | :--- | :--- |
+| **SIT** | `github-actions-platform-ops-toolkit-sit` | `refs/pull/*/merge`、`refs/heads/*`（PR 验证与分支 dispatch） |
+| **UAT** | `github-actions-platform-ops-toolkit-uat` | `refs/heads/main`、`refs/heads/release/*` |
+| **PROD** | `github-actions-platform-ops-toolkit-prod` | **仅 `refs/tags/v*`** |
+
+三个角色另有三项通用约束：`user_claim` 用 `sub`（绑定到工作负载而非触发者用户名）、
+`job_workflow_ref` 钉死到本仓库使用 Vault 的 workflow 白名单、`token_no_default_policy`
+配合 `batch` token。
+
+> **`job_workflow_ref` 白名单是这里最关键的一道约束**：仅靠 `ref` 拦不住「在仓库里新增
+> 一个 workflow 文件来换取 token」，钉死文件名才能拦住。新增使用这些角色的 workflow 时，
+> 必须同步更新 `vault_auth_split.sh` 里的白名单，否则换不到 token。
+
+> ⚠️ **PROD 只能由 `v*` annotated tag 触发**，`workflow_dispatch` 选 `prod` 会认证失败。
+> 这是刻意设计，与「生产部署只经 annotated tag」的分支规范一致。
+
+KV 路径按三层隔离（公共服务共读只读 / 基础凭据按环境只读 / 环境业务密钥按环境读写），
+详见 [Vault KV 三层模型](vault/kv_tier_model.md) 与
+[鉴权与策略隔离](vault/vault_authentication_and_policy_isolation.md)。
 
 *脚本执行路径：* `bash docs/tasks/vault_auth_split.sh` (需具备 Vault Admin Token 并在同终端中执行)
 

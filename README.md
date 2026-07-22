@@ -2,7 +2,13 @@
 
 [🇬🇧 English](README.md) | [🇨🇳 中文版](README_zh.md)
 
-Welcome to **platform-ops-toolkit**. This repository provides automated solutions for disaster recovery, cross-datacenter full migrations, and multi-environment delivery lifecycles for the AI Workspace infrastructure.
+Welcome to **platform-ops-toolkit**. This repository is the platform operations control plane for the AI Workspace infrastructure. It covers the full lifecycle rather than backup alone:
+
+- **Provisioning** — Terraform-based host provisioning, plus multi-cloud IaC pipelines for landing-zone baselines, account/VPC matrices, and resource matrices.
+- **Deployment** — per-service Ansible delivery across four business domains, driven by a CMDB generated fresh on every run.
+- **Secrets & authentication** — GitHub OIDC → Vault JWT with per-environment role and policy isolation, plus tooling to back up, migrate, and verify the Vault KV layout.
+- **Backup, migration & DR** — cross-datacenter full-site migration and recovery, streamed through S3 object storage.
+- **Supporting infrastructure** — self-hosted GitHub/Gitea action runners and observability agents (Vector / Node / Process exporters).
 
 > ℹ️ **Architecture Upgrade Notice**: This toolkit has been refactored from a legacy "All-in-One" monolithic architecture into a highly cohesive architecture bounded by **Business Domains**. This allows us to decouple, migrate on-demand, and independently evolve different business systems. Simultaneously, we have fully implemented a unified [Multi-Environment Delivery Standard](docs/standards/multi-environment-delivery-and-release-standard.md).
 
@@ -10,13 +16,13 @@ Welcome to **platform-ops-toolkit**. This repository provides automated solution
 
 This toolkit is divided into four core domains based on the actual business topology of the production systems:
 
-1. **[web-saas](domains/web-saas/README.md)** (SaaS Frontend & Acceleration Domain)
+1. **[web-saas](docs/domains/web-saas/README.md)** (SaaS Frontend & Acceleration Domain)
    - Covers Web Console, Accounts, Billing, and the underlying Xray tunnel proxy ingress.
-2. **[ai-workspace](domains/ai-workspace/README.md)** (AI Core Routing Domain)
+2. **[ai-workspace](docs/domains/ai-workspace/README.md)** (AI Core Routing Domain)
    - Covers LiteLLM, OpenClaw, QMD, and other intelligent agent/model routing pipelines.
-3. **[agent-proxy](domains/agent-proxy/README.md)** (Acceleration Proxy & Gateway Domain)
+3. **[agent-proxy](docs/domains/agent-proxy/README.md)** (Acceleration Proxy & Gateway Domain)
    - Covers Caddy, Xray tunnels, Xray Exporters, Vector observability proxies, and agent-svc-plus control plane sync nodes.
-4. **[open-platform](domains/open-platform/README.md)** (Open Platform & Infrastructure Domain)
+4. **[open-platform](docs/domains/open-platform/README.md)** (Open Platform & Infrastructure Domain)
    - Covers Gitea, Vault, IAM (Zitadel), and a robust global Observability Stack (Grafana, VictoriaMetrics, etc.).
 
 For detailed migration, backup, and restoration strategies for each domain, please refer to the `README.md` documents within their respective sub-directories.
@@ -45,12 +51,14 @@ When triggered, `platform-ops.yaml` automatically routes to the appropriate deli
 
 | Trigger Event / Source | Target Environment | Resource Declaration | State Key / Workspace |
 | --- | --- | --- | --- |
-| `pull_request` | `sit` | `sit/all-in-one.yaml` | `platform-ops-toolkit/sit/all-in-one.tfstate` |
-| `main` / `release/*` push | `uat` | `uat/web-saas-uat.yaml` | `platform-ops-toolkit/uat/web-saas-uat.tfstate` |
-| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas-prod.yaml` | `platform-ops-toolkit/prod/web-saas-prod.tfstate` |
-| `workflow_dispatch` | User selected | `[env]/web-saas-[env].yaml` | Environment specific |
+| `pull_request` | `sit` | `sit/all-in-one` | `platform-ops-toolkit/sit/all-in-one.tfstate` |
+| `main` / `release/*` push | `uat` | `uat/web-saas` | `platform-ops-toolkit/uat/web-saas.tfstate` |
+| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas` | `platform-ops-toolkit/prod/web-saas.tfstate` |
+| `workflow_dispatch` | User selected | `[env]/[target_domains]` | `platform-ops-toolkit/[env]/[target_domains].tfstate` |
 
-Prior to the initial UAT / Prod release, you must configure DNS for the target environment (e.g., `console.uat.svc.plus` or the production domains) and inject the corresponding `kv/data/[env]/web-saas` credentials into Vault. The workflow will fail if these credentials are missing. **Environments are strictly isolated, and pipelines will never read secrets across environments.**
+Prior to the initial UAT / Prod release, you must configure DNS for the target environment (the UAT web-saas host resolves as `console-uat.onwalk.net`) and populate the web-saas credentials in Vault. The workflow fails fast if they are missing: a dedicated validation step runs *before* any deployment action and exits non-zero on an empty value.
+
+> ⚠️ **`pull_request` provisions and deploys real infrastructure.** The `sit` route sets `terraform_action=apply` and `toolkit_action=deploy` — it is not a plan-only dry run. Keep this in mind when reviewing the blast radius of the `sit` role's Vault policy.
 
 ### ⚠️ Vault Authentication Configuration (GitHub Actions OIDC → Vault JWT)
 
@@ -72,28 +80,42 @@ chmod +x docs/tasks/vault_auth_split.sh
 This script will automatically create:
 - Three environment-specific policies: `github-actions-platform-ops-toolkit-sit`, `-uat`, `-prod`
 - Three OIDC JWT authentication roles: `github-actions-platform-ops-toolkit-sit`, `-uat`, `-prod`
-- Security constraints: For example, the `prod` role is strictly bound to only accept requests triggered by `v*` release tags, preventing hijacking from regular branches or PRs.
+- Security constraints: the `prod` role accepts only `v*` tag triggers; every role additionally pins `job_workflow_ref` to an allowlist of this repo's Vault-using workflow files, so adding a new workflow cannot mint a token.
+
+Verify the result — the layout invariants are executable assertions, not conventions:
+
+```bash
+./scripts/vault/vault_layout_verify.py   # exit 0 = all pass, usable as a CI gate
+```
 
 #### 2. Populate KV Parameters for Each Domain
 
-Please prepare your secrets in the corresponding environment paths, such as `kv/data/sit/*`, `kv/data/uat/*`, and `kv/data/prod/*`, according to the table below:
+The KV tree is split into three tiers by whether a secret has an *environment dimension* at all. See [Vault KV Tier Model](docs/vault/kv_tier_model.md) for the classification test and invariants.
 
-| Vault Path Example | Key | Purpose |
-| --- | --- | --- |
-| `kv/data/CICD` | `SSH_PRIVATE_DEPLOY_KEY_B64` | Globally Shared: Ansible SSH deployment private key (single-line base64) |
-| `kv/data/CICD` | `VULTR_API_KEY` | Globally Shared: Terraform API key for provisioning VPS |
-| `kv/data/CICD` | `TF_STATE_ENDPOINT` etc. | Globally Shared: Remote TF state configuration (S3-compatible) |
-| `kv/data/CICD` | `CLOUDFLARE_DNS_API_TOKEN` | Globally Shared: Cloud DNS API token for hijacking or switching domains |
-| `kv/data/uat/web-saas` | 6 keys (see sub-domain docs) | Required credentials for web-saas UAT domain services |
-| `kv/data/prod/web-saas` | 6 keys (see sub-domain docs) | Required credentials for web-saas PROD domain services |
+| Tier | Vault Path | Example Keys | Access |
+| --- | --- | --- | --- |
+| ① Common services | `kv/data/CICD` | `GHCR_USERNAME`, `GHCR_TOKEN` | All three roles, **read-only** |
+| ② Base credentials | `kv/data/CICD/<env>` | `SSH_PRIVATE_DEPLOY_KEY_B64`, `VULTR_API_KEY`, `TF_STATE_*` | **Own environment only**, read-only |
+| ③ Environment secrets | `kv/data/<env>/*` | `databases`, `agent-proxy`, … | Own environment only, read/write (**prod denied `delete`**) |
+
+Tiers ① and ② are read-only for every role: pipelines *consume* credentials, they do not *rotate* them. `prod` is denied `delete` on `kv/metadata` as well as `kv/data`, since a metadata delete destroys every version of a secret.
+
+> **Migration status:** base credentials still live at the `kv/data/CICD` root; `kv/data/CICD/<env>` is authorized but not yet populated. Run `./scripts/vault/vault_migrate_base_credentials.sh --dry-run` to preview step one. Note that copying one credential set into three paths isolates the *paths* — the security benefit only lands once each environment holds genuinely distinct keys.
+
+> **Known gap:** `kv/data/WEB_SAAS` is read by both `uat` and `prod`, so those two environments currently share one set of database passwords. It belongs in tier ③ and should become `kv/data/<env>/web-saas`. See [KV layout and migration](docs/vault/kv_layout_and_migration.md).
 
 #### 3. Workflow Dynamic Authentication Integration (Active, No Changes Required)
 
-During execution, the workflow will dynamically compute and request the corresponding environment Role based on your trigger branch, ensuring a secure fetch of isolated secrets:
+During execution, the workflow derives the environment from the trigger event and requests the matching role, so each run can only reach its own environment's secrets:
+
 ```yaml
 env:
-  DEPLOY_ENV: ${{ steps.route.outputs.deploy_env }}
-  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ steps.route.outputs.deploy_env }}
+  # The routing ternary is repeated per variable because the env context
+  # cannot reference itself inside a workflow-level env: block.
+  DEPLOY_ENV:    ${{ github.event_name == 'pull_request' && 'sit' || … }}
+  VAULT_ROLE:    github-actions-platform-ops-toolkit-${{ … }}
+  VAULT_KV:      kv/data/CICD                  # ① common services
+  VAULT_KV_BASE: kv/data/CICD/${{ … }}         # ② base credentials, per environment
 ```
 
 #### 4. Acceptance and Troubleshooting
