@@ -31,6 +31,10 @@ The replacement module lives in the `iac_modules` repository at
 5. The source instance is retained for the observation window by default.
 6. Production runs should use the `resize-prod` GitHub Environment with an
    approval rule before allowing the workflow to continue.
+7. Snapshot-based replacements require the target plan disk to be at least as
+   large as the source disk. A smaller target disk is rejected during preflight
+   before a snapshot is created; it requires an application-level backup and
+   restore migration instead.
 
 The workflow uses Vault OIDC credentials. It does not accept provider tokens as
 workflow inputs and does not put credentials in Terraform state variables.
