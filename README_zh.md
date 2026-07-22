@@ -2,33 +2,40 @@
 
 [🇬🇧 English](README.md) | [🇨🇳 中文版](README_zh.md)
 
-欢迎使用 **platform-ops-toolkit**。本代码库提供了面向 AI Workspace 基础架构灾难恢复、跨机房整体迁移以及多环境交付生命周期的自动化解决方案。
+欢迎使用 **platform-ops-toolkit**。本仓库是 AI Workspace 基础设施的平台运维控制面，覆盖的是完整生命周期，而不只是备份：
 
-> ℹ️ **架构升级提示**：本工具集已经从旧版的“All-in-One”大一统架构，重构为高度模块化和动态化的基础设施即代码（IaC）平台。全新架构围绕 **“多组织 (Multi-Organization) / 多账户 (Multi-Account) / 多云 (Multi-Cloud) / 多环境 (Multi-Environment)”** 的拓扑层级进行了深度整合，并实现了 **Terraform (IaC) + Ansible + HashiCorp Vault** 的无缝安全协同。这允许我们针对不同业务系统和云基础架构进行解耦、按需部署、跨云迁移及独立演进。同时，我们已全面实施统一的多环境交付与发布标准 (Multi-Environment Delivery Standard)。
+- **Provisioning** —— 基于 Terraform 的主机 provisioning，以及面向 landing-zone baseline、account/VPC matrix、resources matrix 的多云 IaC 流水线。
+- **部署** —— 四个业务域各自的按服务 Ansible 部署，每次 run 都基于当次新生成的 CMDB。
+- **多云是设计目标，但目前接线并不均衡** —— `iac_modules` 已经为 `aws-cloud` / `gcp-cloud` / `azure-cloud` / `vultr-vps` 准备了真实的 Terraform 模块，landing-zone / account-matrix / resources-matrix 这几条流水线四个都在用。下面提到的四个业务域流水线（`platform-ops.yaml`）**目前只接了 Vultr**：`cloud_provider` 在这里是必选参数，确保目标云永远显式选择，但选择 `vultr-vps` 之外的任何值都会直接失败，而不是悄悄部署到 Vultr 却挂着别的云的名字。详见下方 [环境 Profile 发布与路由规则](#环境-profile-发布与路由规则)。
+- **密钥与鉴权** —— GitHub OIDC → Vault JWT，按环境隔离 role 与 policy，并配有校验、迁移、备份 Vault KV 布局的工具。
+- **备份、迁移与容灾** —— 跨机房整体迁移与恢复，经 S3 对象存储流式传输。
+- **配套基础设施** —— 自托管的 GitHub/Gitea Action Runner，以及可观测性代理（Vector / Node / Process exporters）。
 
-## 🌐 核心业务域导航 (Business Domains)
+> ℹ️ **架构升级提示**：本工具集已从旧版 "All-in-One" 单体架构，重构为以 **业务域 (Business Domain)** 为边界的高内聚架构。这使我们能够对不同业务系统解耦、按需迁移、独立演进。同时我们已全面落地统一的 [多环境交付标准](docs/standards/multi-environment-delivery-and-release-standard.md)。
 
-本工具集依据线上系统的实际业务链路，拆分为以下4个核心域：
+## 🌐 核心业务域
 
-1. **[web-saas](domains/web-saas/README.md)** (SaaS 前端与加速域)
-   - 涵盖 Web Console、Accounts、Billing 计费及底层的 Xray 隧道代理入口。
-2. **[ai-workspace](domains/ai-workspace/README.md)** (AI 核心链路域)
-   - 涵盖 LiteLLM、OpenClaw、QMD 等智能代理与模型路由调度链路。
-3. **[agent-proxy](domains/agent-proxy/README.md)** (加速代理与网关域)
-   - 涵盖 Caddy、Xray 隧道、Xray Exporters、Vector 观测代理和 agent-svc-plus 控制面同步节点。
-4. **[open-platform](domains/open-platform/README.md)** (开放平台与基础设施域)
-   - 涵盖 Gitea、Vault、IAM (Zitadel) 以及强大的全局可观测性底座 (Observability Stack - Grafana, VictoriaMetrics 等)。
+本工具集依据线上系统的实际业务拓扑，划分为四个核心域：
 
-详细的各个域的迁移、备份、与恢复策略，请查阅各个子域内的 `README.md` 文档。
+1. **[web-saas](docs/domains/web-saas/README.md)**（SaaS 前端与加速域）
+   - 涵盖 Web Console、Accounts、Billing，以及底层的 Xray 隧道代理入口。
+2. **[ai-workspace](docs/domains/ai-workspace/README.md)**（AI 核心路由域）
+   - 涵盖 LiteLLM、OpenClaw、QMD 等智能代理/模型路由链路。
+3. **[agent-proxy](docs/domains/agent-proxy/README.md)**（加速代理与网关域）
+   - 涵盖 Caddy、Xray 隧道、Xray Exporter、Vector 可观测性代理，以及 agent-svc-plus 控制面同步节点。
+4. **[open-platform](docs/domains/open-platform/README.md)**（开放平台与基础设施域）
+   - 涵盖 Gitea、Vault、IAM（Zitadel），以及完整的全局可观测性底座（Grafana、VictoriaMetrics 等）。
 
-## 🚀 迁移编排与使用 (Orchestration)
+各域详细的迁移、备份、恢复策略，请查阅各子域目录内的 `README.md`。
 
-*注：编排层正在从旧版 Python 单体脚本向模块化 Ansible / Make 支持过渡中。*
+## 🚀 编排与使用
 
-您可以通过全局的入口命令，指定单个或多个 `DOMAIN` 来执行按需备份或迁移：
+*注：编排层正在从旧版单体 Python 脚本向 Ansible / Make 支持的模块化架构过渡。*
+
+可通过全局入口命令，指定一个或多个 `DOMAIN` 执行按需备份或迁移：
 
 ```bash
-# 示例：仅对 AI 工作区及开放平台底座进行数据备份
+# 示例：仅对 ai-workspace 与 open-platform 两个域做数据备份
 make backup DOMAIN=ai-workspace,open-platform
 
 # 示例：一键触发全站各域的迁移与恢复流水线
@@ -37,68 +44,91 @@ make migrate DOMAIN=all
 
 ## 🛠️ CI/CD 与 IaC 流水线
 
-通过流水线触发整体或部分域的部署或迁移时，底层同样会调用相应的业务域策略模块。
+通过 CI/CD 流水线触发全站或指定域的部署/迁移时，底层逻辑会调用对应的业务域策略模块。
 
-### 环境 Profile 发布与映射规则
+### 环境 Profile 发布与路由规则
 
-`platform-ops.yaml` 在被触发时会根据当前的分支或标签自动路由到对应的交付环境。Terraform 先创建或更新主机，再生成 CMDB；后续 Ansible 只能使用该 run 的 CMDB inventory。
+触发时，`platform-ops.yaml` 会根据当前 Git 分支或 tag 自动路由到对应的交付环境。Terraform 先创建或更新主机，再生成 CMDB；随后 Ansible 严格只使用该次 run 生成的 CMDB inventory。
 
-| 触发事件 / 来源 | 目标环境 | 资源声明映射 | state key / workspace |
+| 触发事件 / 来源 | 目标环境 | 资源声明 | State Key / Workspace |
 | --- | --- | --- | --- |
-| `pull_request` | `sit` | `sit/all-in-one.yaml` | `platform-ops-toolkit/sit/all-in-one.tfstate` |
-| `main` / `release/*` push | `uat` | `uat/web-saas-uat.yaml` | `platform-ops-toolkit/uat/web-saas-uat.tfstate` |
-| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas-prod.yaml` | `platform-ops-toolkit/prod/web-saas-prod.tfstate` |
-| `workflow_dispatch` | 用户选择 | `[env]/web-saas-[env].yaml` | 对应环境 |
+| `pull_request` | `sit` | `sit/all-in-one` | `platform-ops-toolkit/sit/all-in-one.tfstate` |
+| `main` / `release/*` push | `uat` | `uat/web-saas` | `platform-ops-toolkit/uat/web-saas.tfstate` |
+| `vMAJOR.MINOR.PATCH` tag | `prod` | `prod/web-saas` | `platform-ops-toolkit/prod/web-saas.tfstate` |
+| `workflow_dispatch` | 用户选择 | `[env]/[target_domains]` | `platform-ops-toolkit/[env]/[target_domains].tfstate` |
 
-首次 UAT / Prod 发布前仍须配置对应环境（例如 `console.uat.svc.plus` 或生产域名）的 DNS，并在 Vault 写入对应的 `kv/data/[env]/web-saas` 凭证。工作流会在这些凭证缺失时失败，**环境之间严格隔离，绝不会跨环境读取 Secret**。
+首次 UAT / Prod 发布前，需要为目标环境配置好 DNS（UAT 的 web-saas 主机解析为 `console-uat.onwalk.net`），并在 Vault 里填好 web-saas 凭证。缺失时 workflow 会快速失败：有专门的校验步骤在任何部署动作**之前**执行，取到空值就非零退出。
 
-### ⚠️ Vault 鉴权配置 (GitHub Actions OIDC → Vault JWT)
+> ⚠️ **`pull_request` 会 provision 并部署真实基础设施。** `sit` 路由设置的是 `terraform_action=apply`、`toolkit_action=deploy` —— 不是只做 plan 的干跑。评估 `sit` role 的 Vault policy 爆炸半径时要把这一点算进去。
 
-流水线不使用任何 GitHub Actions Secrets 存敏感值；所有凭证都在运行时经 **GitHub OIDC → Vault JWT** 登录后，从 Vault KV 按路径（`sit`, `uat`, `prod`）分发。
+#### `cloud_provider`（仅 workflow_dispatch，必选）
 
-#### 1. 初始化隔离角色与策略 (一次性操作)
+选项：`aws-cloud` / `gcp-cloud` / `azure-cloud` / `vultr-vps`。无默认值 —— 必须显式选择。
 
-我们废弃了全局大一统的 Vault Policy，改为各个环境按需独立授权。
-您只需要使用 Vault 管理员 Token 执行内置的初始化脚本：
+**目前这四个业务域只有 `vultr-vps` 是端到端接好线的**：`config/resources/{sit,uat,prod}/*.yaml` 的主机声明、基础凭据（`VULTR_API_KEY`）、`VPS_ROOT`/`ENV_DIR` 全部指向 Vultr。选别的值会在 checkout 之后、Vault 与 Terraform 之前的一步专门校验里直接失败，报错信息会点名你选了什么、并说明这里目前只实现了 `vultr-vps`。
+
+另外三个选项之所以存在，是因为这本来就是一个按多云设计的工具集，不是 Vultr 专用工具：`iac_modules/terraform-hcl-standard/{aws-cloud,gcp-cloud,azure-cloud}` 是真实存在、已经被 landing-zone / account-matrix / resources-matrix 流水线使用的 Terraform 模块（见上文多云那条）。要把 `platform-ops.yaml` 接到第二个云，需要为每个业务域补上该云的资源声明与基础凭据 —— 在这些工作落地之前，那道校验步骤就是占位：选一个还没实现的 provider 会直接报错，而不是悄悄部署到 Vultr 却挂着别的名字。
+
+### ⚠️ Vault 鉴权配置（GitHub Actions OIDC → Vault JWT）
+
+流水线不会把敏感值存进 GitHub Actions Secrets。所有凭证都是运行时经 **GitHub OIDC → Vault JWT** 登录后，从 Vault KV 路径动态下发。
+
+#### 1. 初始化隔离的 Role 与 Policy（一次性操作）
+
+已废弃全局大一统的 Vault Policy，改为按环境独立授权。只需用 Vault 管理员 Token 执行内置的初始化脚本：
 
 ```bash
 export VAULT_ADDR=https://vault.svc.plus
 export VAULT_TOKEN="hvs.xxxxxxxxx"   # 管理员 Token
 
-# 赋予该脚本执行权限并运行
+# 赋予执行权限并运行
 chmod +x docs/tasks/vault_auth_split.sh
 ./docs/tasks/vault_auth_split.sh
 ```
 
-该脚本将自动为您创建：
-- 三套环境专属策略：`github-actions-platform-ops-toolkit-sit`, `-uat`, `-prod`
-- 三套 OIDC JWT 鉴权角色：`github-actions-platform-ops-toolkit-sit`, `-uat`, `-prod`
-- 安全约束：例如，`prod` 角色严格限制只能被 `v*` 格式的发行版标签触发获取权限，绝不会被普通分支或 PR 劫持。
+该脚本会自动创建：
+- 三套环境专属 policy：`github-actions-platform-ops-toolkit-sit`、`-uat`、`-prod`
+- 三套 OIDC JWT 鉴权 role：`github-actions-platform-ops-toolkit-sit`、`-uat`、`-prod`
+- 安全约束：`prod` role 只接受 `v*` tag 触发；每个 role 还额外把 `job_workflow_ref` 钉死到本仓库使用 Vault 的 workflow 白名单，仓库里新增一个 workflow 换不到任何 role。
 
-#### 2. 填充各域 KV 参数
+跑完之后校验结果 —— 分层不变式是可执行断言，不是约定：
 
-请按照下表，分别在 `kv/data/sit/*`、`kv/data/uat/*`、`kv/data/prod/*` 等对应环境的路径中准备好密钥：
+```bash
+./scripts/vault/vault_layout_verify.py   # exit 0 = 全部通过, 可做 CI 门禁
+```
 
-| Vault 路径示例 | 键 | 用途 |
-| --- | --- | --- |
-| `kv/data/CICD` | `SSH_PRIVATE_DEPLOY_KEY_B64` | 全局共享：Ansible SSH 部署私钥（单行 base64） |
-| `kv/data/CICD` | `VULTR_API_KEY` | 全局共享：Terraform provision VPS 接口密钥 |
-| `kv/data/CICD` | `TF_STATE_ENDPOINT`等 | 全局共享：远端 TF state (S3 兼容) |
-| `kv/data/CICD` | `CLOUDFLARE_DNS_API_TOKEN` | 全局共享：接管或切换域名的云解析密钥 |
-| `kv/data/uat/web-saas` | 6 个键 (见子域文档) | web-saas UAT 域服务部署必需凭证 |
-| `kv/data/prod/web-saas` | 6 个键 (见子域文档) | web-saas PROD 域服务部署必需凭证 |
+#### 2. 为各域填充 KV 参数
 
-#### 3. Workflow 侧动态鉴权接入（已自动生效，无需改动）
+KV 树按「这个 secret 到底有没有环境维度」分成三层。判据与不变式见 [Vault KV 三层模型](docs/vault/kv_tier_model.md)。
 
-工作流执行时，会自动根据您触发的分支计算并请求相应的环境 Role，进而安全地拉取隔离状态的 Secret：
+| 层 | Vault 路径 | 示例键 | 权限 |
+| --- | --- | --- | --- |
+| ① 公共服务 | `kv/data/CICD` | `GHCR_USERNAME`、`GHCR_TOKEN` | 三个 role 共读，**只读** |
+| ② 基础凭据 | `kv/data/CICD/<env>` | `SSH_PRIVATE_DEPLOY_KEY_B64`、`VULTR_API_KEY`、`TF_STATE_*` | **仅本环境**，只读 |
+| ③ 环境业务密钥 | `kv/data/<env>/*` | `databases`、`agent-proxy` 等 | 仅本环境，可读写（**prod 无 `delete`**） |
+
+①②两层对所有 role 都只读：流水线**消费**凭据，不负责**轮换**凭据。`prod` 在 `kv/metadata` 上同样没有 `delete`——metadata 的 delete 会销毁一个 secret 的全部版本。
+
+> **迁移状态**：基础凭据目前仍在 `kv/data/CICD` 根路径；`kv/data/CICD/<env>` 已授权但尚未写入数据。跑 `./scripts/vault/vault_migrate_base_credentials.sh --dry-run` 预览第一步。注意把同一份凭据复制进三个路径只是隔离了*路径*——真正的安全收益要等各环境持有各自独立的密钥才成立。
+
+> **已知缺口**：`kv/data/WEB_SAAS` 目前由 `uat` 与 `prod` 共读，两个环境共用同一套数据库口令。它本该属于第 ③ 层，应拆分为 `kv/data/<env>/web-saas`。详见 [KV 布局与迁移计划](docs/vault/kv_layout_and_migration.md)。
+
+#### 3. Workflow 动态鉴权接入（已生效，无需改动）
+
+执行时，workflow 会根据触发事件推导出环境并请求对应的 role，因此每次 run 只能读到自己环境的密钥：
+
 ```yaml
 env:
-  DEPLOY_ENV: ${{ steps.route.outputs.deploy_env }}
-  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ steps.route.outputs.deploy_env }}
+  # 路由三元表达式在每个变量上都重复了一遍, 因为 env 上下文在 workflow 顶层
+  # 的 env: 块内不能引用自身。
+  DEPLOY_ENV:    ${{ github.event_name == 'pull_request' && 'sit' || … }}
+  VAULT_ROLE:    github-actions-platform-ops-toolkit-${{ … }}
+  VAULT_KV:      kv/data/CICD                  # ① 公共服务
+  VAULT_KV_BASE: kv/data/CICD/${{ … }}         # ② 基础凭据, 按环境
 ```
 
 #### 4. 验收与排障
 
-- 触发流水线后，每个 job 的 `Authenticate to Vault` 或 `Load Vault secrets` 步骤应显示成功获取 Token 的信息且无报错。
-- 报错 `403 Forbidden`：说明环境变量自动拼装的 role 绑定的 policy 未覆盖所读路径（例如在 uat 环境试图读取 prod 的密钥库）。
-- 报错 `permission denied` 或 Role 不匹配：请核对触发流水线的 Git 事件（如分支名称或 Tag）是否满足 Vault JWT Role 内 `bound_claims` 的安全锁定要求。
+- 触发流水线后，每个 job 的 `Authenticate to Vault` 或 `Load Vault secrets` 步骤应显示成功获取 Token，且无报错。
+- `403 Forbidden`：说明动态拼装出来的 role 所绑定的 policy 没有覆盖所请求的路径（例如在 uat 环境里读取 prod 的密钥）。
+- `permission denied` 或 role 不匹配：请确认触发流水线的 Git 事件（分支名或 tag）是否满足该 Vault JWT role 的 `bound_claims` 安全边界。

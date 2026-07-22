@@ -6,6 +6,7 @@ Welcome to **platform-ops-toolkit**. This repository is the platform operations 
 
 - **Provisioning** — Terraform-based host provisioning, plus multi-cloud IaC pipelines for landing-zone baselines, account/VPC matrices, and resource matrices.
 - **Deployment** — per-service Ansible delivery across four business domains, driven by a CMDB generated fresh on every run.
+- **Multi-cloud, by design, unevenly wired today** — `iac_modules` already carries real Terraform modules for `aws-cloud` / `gcp-cloud` / `azure-cloud` / `vultr-vps`, and the landing-zone / account-matrix / resources-matrix pipelines use all four. The four business-domain pipelines below (`platform-ops.yaml`) are **Vultr-only today**: `cloud_provider` is a required input there so the target is always explicit, but selecting anything other than `vultr-vps` fails fast rather than quietly deploying to Vultr under a different provider's name. See [§ Environment Profile Releases and Routing Rules](#environment-profile-releases-and-routing-rules).
 - **Secrets & authentication** — GitHub OIDC → Vault JWT with per-environment role and policy isolation, plus tooling to back up, migrate, and verify the Vault KV layout.
 - **Backup, migration & DR** — cross-datacenter full-site migration and recovery, streamed through S3 object storage.
 - **Supporting infrastructure** — self-hosted GitHub/Gitea action runners and observability agents (Vector / Node / Process exporters).
@@ -59,6 +60,14 @@ When triggered, `platform-ops.yaml` automatically routes to the appropriate deli
 Prior to the initial UAT / Prod release, you must configure DNS for the target environment (the UAT web-saas host resolves as `console-uat.onwalk.net`) and populate the web-saas credentials in Vault. The workflow fails fast if they are missing: a dedicated validation step runs *before* any deployment action and exits non-zero on an empty value.
 
 > ⚠️ **`pull_request` provisions and deploys real infrastructure.** The `sit` route sets `terraform_action=apply` and `toolkit_action=deploy` — it is not a plan-only dry run. Keep this in mind when reviewing the blast radius of the `sit` role's Vault policy.
+
+#### `cloud_provider` (workflow_dispatch only, required)
+
+Options: `aws-cloud` / `gcp-cloud` / `azure-cloud` / `vultr-vps`. No default — you must pick one.
+
+**Only `vultr-vps` is wired end to end for these four business domains today**: the `config/resources/{sit,uat,prod}/*.yaml` host declarations, the base credentials (`VULTR_API_KEY`), and `VPS_ROOT`/`ENV_DIR` all target Vultr. Selecting anything else fails in a dedicated validation step immediately after checkout — before Vault, before Terraform — naming the value you chose and stating that only `vultr-vps` is implemented here.
+
+The other three options exist because this is a multi-cloud-shaped toolkit, not a Vultr-only one: `iac_modules/terraform-hcl-standard/{aws-cloud,gcp-cloud,azure-cloud}` are real Terraform modules already exercised by the landing-zone / account-matrix / resources-matrix pipelines (see the multi-cloud bullet above). Extending `platform-ops.yaml` to a second provider means adding that provider's resource declarations and base credentials for each business domain — the validation step is what stands in for that work until it lands, so choosing an unimplemented provider fails loudly instead of silently deploying to Vultr under the wrong label.
 
 ### ⚠️ Vault Authentication Configuration (GitHub Actions OIDC → Vault JWT)
 
