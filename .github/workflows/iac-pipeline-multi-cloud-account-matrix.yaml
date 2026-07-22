@@ -2,16 +2,15 @@ name: Multi Cloud IAC Pipeline (Account/VPC Matrix)
 
 on:
   push:
+    paths:
+    - 'terraform-hcl-standard/**'
+    - '.github/workflows/iac-pipeline-multi-cloud-account-matrix.yaml'
   pull_request:
     paths:
     - 'terraform-hcl-standard/**'
     - '.github/workflows/iac-pipeline-multi-cloud-account-matrix.yaml'
   workflow_dispatch:
     inputs:
-      toolkit_ref:
-        description: "platform-ops-toolkit 仓库的 Git Ref (例如 main, v1.0.0)。用于跨 Tag 触发时拉取指定代码"
-        required: false
-        type: string
       deploy_action:
         type: choice
         options: [plan, apply, destroy]
@@ -99,8 +98,6 @@ jobs:
     steps:
     - name: Checkout Toolkit
       uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Checkout iac_modules
       uses: actions/checkout@v4
