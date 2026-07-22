@@ -57,33 +57,36 @@ EOF
 # -----------------------------------------------------------------------------
 # Policies
 #
-# 路径分两类:
+# 路径分三层:
 #
-#   1. 公共服务 secret —— 共享, 不按环境拆分:
-#        kv/data/CICD          镜像仓库拉取凭据(GHCR)、云账号 API key、
-#                              TF state 后端凭据、SSH 部署密钥
+#   1. 公共服务 secret —— 三个环境共读, 只读不可改:
+#        kv/data/CICD          GHCR 镜像拉取凭据(GHCR_USERNAME / GHCR_TOKEN)
 #        kv/data/openclaw
 #        kv/data/action-runner
-#      这些是全平台共用的公共能力(拉镜像、访问同一个云账号、访问同一个 state
-#      后端), 本身不存在"环境"的概念, 拆成 sit/uat/prod 三份只会产生三份需要
-#      同步轮换的副本, 不产生隔离收益。
+#      拉的是同一批镜像, 不存在"环境"这个维度, 拆三份只会产生三份要同步轮换
+#      的副本。这一层**只给 read**, 任何 role 都不能写 —— 公共资产不允许被
+#      任何单一环境的流水线改动。
 #
-#   2. 环境专属 secret —— 严格隔离:
-#        kv/data/<env>/*       该环境自己的业务密钥, 各 role 只能读写自己那份
+#   2. 基础凭据 —— 按环境拆分, 各 role 只读自己那份, 同样只读:
+#        kv/data/CICD/<env>    VULTR_API_KEY / TF_STATE_* / SSH_PRIVATE_DEPLOY_KEY_B64
+#      这些凭据授予的是"控制基础设施"和"登录主机"的能力, 是提权的实际载体,
+#      必须按环境隔离: sit 失陷不应该拿到 prod 的云账号和主机私钥。
+#      注意 KV v2 里 kv/data/CICD 与 kv/data/CICD/<env> 是两个独立的 secret,
+#      而 policy 里 path "kv/data/CICD" 只精确匹配根路径、不匹配子路径,
+#      所以"共读根 + 只读自己那份子路径"可以严格成立。
 #
-# 关于共享路径的爆炸半径: 共享路径的风险上限由"最松的那个 role"决定。原先
-# sit role 只绑 repository、没有任何 ref / workflow 约束, 任何人推个分支加个
-# workflow 就能换到 sit token 并读走 kv/data/CICD —— 那时共享确实是危险的。
-# 本次把三个 role 都钉死到 job_workflow_ref 白名单 + 各自的 ref 之后, 能换到
-# token 的路径已经收敛到本仓库这 5 个 workflow 文件, 共享路径的风险随之下降。
-# 也就是说: 真正堵住提权的是绑定收紧, 而不是拆路径。
+#   3. 环境专属业务密钥 —— 严格隔离, 可读写:
+#        kv/data/<env>/*       该环境自己的业务密钥
+#
+# 另外: 绑定收紧(job_workflow_ref 白名单 + 各自 ref)与本层路径隔离是两道
+# 独立的防线。绑定决定"谁能换到 token", 路径决定"换到之后能看到什么"。
 # -----------------------------------------------------------------------------
 
-# 公共服务 secret: 三个环境共读, 不按环境拆分。
+# 第 1 层: 公共服务 secret —— 三个环境共读, 只给 read, 不可修改。
 emit_common_read_paths() {
   cat <<'EOF'
-# 公共服务凭据(GHCR 拉取 / 云账号 / TF state 后端 / SSH 部署密钥)。
-# 全平台共用的公共能力, 不存在环境维度, 因此不拆分为 sit/uat/prod。
+# 公共服务凭据(GHCR 镜像拉取等)。全平台共用, 不存在环境维度, 不拆分。
+# 只读: 公共资产不允许被任何单一环境的流水线改动。
 path "kv/data/CICD" {
   capabilities = ["read"]
 }
@@ -102,11 +105,30 @@ path "kv/metadata/action-runner" {
 EOF
 }
 
+# 第 2 层: 基础凭据 —— 只读, 且只读自己环境那一份。
+# $1 = env name
+emit_base_credential_paths() {
+  local env="$1"
+  cat <<EOF
+
+# 本环境的基础凭据(云账号 API key / TF state 后端凭据 / SSH 部署私钥)。
+# 只精确授予 kv/data/CICD/${env}, 因此读不到其他环境的同类凭据。
+# 同样只给 read: 流水线消费凭据, 不负责轮换凭据。
+path "kv/data/CICD/${env}" {
+  capabilities = ["read"]
+}
+path "kv/metadata/CICD/${env}" {
+  capabilities = ["list", "read"]
+}
+EOF
+}
+
 # $1 = env name (sit|uat|prod)
 emit_env_policy() {
   local env="$1"
 
   emit_common_read_paths
+  emit_base_credential_paths "${env}"
 
   # WEB_SAAS 目前是 uat / prod 共读(内含 POSTGRES_ROOT_PASSWORD /
   # ACCOUNT_DB_PASSWORD 等), 即 uat 与 prod 共用同一套数据库口令。这与
@@ -226,7 +248,18 @@ echo
 echo "注意行为变更: prod 现在只接受 v* tag。workflow_dispatch 选 prod 会认证失败,"
 echo "这与分支规范'生产部署只经 annotated tag'一致。"
 echo
+echo "⚠️ 基础凭据迁移必须按序执行, 否则流水线会读到空值:"
+echo "  1. 先写数据: 为每个环境在 kv/CICD/{sit,uat,prod} 写入各自的"
+echo "     VULTR_API_KEY / TF_STATE_* / SSH_PRIVATE_DEPLOY_KEY_B64。"
+echo "  2. 应用本脚本(policy 生效)。"
+echo "  3. 合并 workflow 侧的 VAULT_KV_BASE 改动。"
+echo "  4. 最后从根路径 kv/CICD 删掉已搬走的基础凭据, 只留 GHCR 等公共服务键。"
+echo
+echo "  第 1 步可以先把现有同一份凭据复制到三个路径下让链路先跑通, 但真正的隔离"
+echo "  收益要等三个环境换成各自独立的凭据(独立 Vultr API key / 独立 SSH 密钥对)"
+echo "  才成立。在那之前, 路径已隔离但凭据仍复用。"
+echo
 echo "后续待办(未包含在本脚本中):"
-echo "  - kv/data/WEB_SAAS 目前由 uat 与 prod 共读, 内含数据库口令。数据库口令是"
-echo "    环境专属的业务密钥(不同于 kv/data/CICD 那类公共服务凭据), 应拆分为"
+echo "  - kv/data/WEB_SAAS 目前由 uat 与 prod 共读, 内含数据库口令。数据库口令属于"
+echo "    环境专属业务密钥(不同于 kv/data/CICD 那类公共服务凭据), 应拆分为"
 echo "    kv/data/<env>/web-saas, 让两个环境不再共用同一套口令。"
