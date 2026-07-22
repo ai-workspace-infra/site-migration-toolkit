@@ -65,6 +65,10 @@
 
 > ⚠️ **未决问题**：`kv/data/WEB_SAAS` 由 uat 与 prod 共读，内含 `POSTGRES_ROOT_PASSWORD`、`ACCOUNT_DB_PASSWORD`——即两个环境共用同一套数据库口令。数据库口令属于第 ③ 层（环境专属业务密钥），不是公共服务凭据，后续应拆分为 `kv/data/<env>/web-saas`。
 
+> 📋 `kv/` 根下现存路径的**逐条归位与迁移计划**见
+> [kv_layout_and_migration.md](./kv_layout_and_migration.md)——包含 `prod/` 缺失、
+> 4 个 workflow 仍从根路径读基础凭据、7 个 service 路径未授权等已梳理出的问题。
+
 ### 2.2 迁移顺序（重要）
 
 基础凭据从根路径搬到 `kv/data/CICD/<env>` 需要按序执行，否则流水线会读到空值：
