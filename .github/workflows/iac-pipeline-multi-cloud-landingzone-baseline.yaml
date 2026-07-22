@@ -34,8 +34,8 @@ on:
       cloud_provider:
         description: "服务商 / Cloud Provider"
         type: choice
-        options: [aws-cloud, gcp-cloud, vultr-vps]
-        default: aws-cloud
+        required: true
+        options: [aws-cloud, gcp-cloud, azure-cloud, vultr-vps]
       gitops_repo_name:
         description: "GitOps repository (URL or owner/repo)"
         type: string
@@ -64,8 +64,7 @@ on:
         default: sit
       cloud_provider:
         type: string
-        required: false
-        default: aws-cloud
+        required: true
       gitops_repo_name:
         type: string
         required: false

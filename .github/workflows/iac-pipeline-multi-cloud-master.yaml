@@ -34,10 +34,10 @@ on:
         options: [sit, uat, prod]
         default: sit
       cloud_provider:
-        description: "服务商 / Cloud Provider"
+        description: "服务商 / Cloud Provider (必选, 无默认值 —— 决定 terraform 模块目录、config 路径与 backend key, 选错等于部署到错误目标)"
         type: choice
-        options: [aws-cloud, gcp-cloud, vultr-vps]
-        default: aws-cloud
+        required: true
+        options: [aws-cloud, gcp-cloud, azure-cloud, vultr-vps]
       accounts_components:
         description: "账号层级组件选择 (逗号分隔)"
         type: string
@@ -84,7 +84,7 @@ jobs:
       deploy_action: ${{ inputs.deploy_action || 'apply' }}
       project: ${{ inputs.project || 'svc.plus' }}
       vault_env_path: ${{ inputs.vault_env_path || 'sit' }}
-      cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
+      cloud_provider: ${{ inputs.cloud_provider }}
       gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
       gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
     secrets: inherit
@@ -100,7 +100,7 @@ jobs:
       deploy_action: ${{ inputs.deploy_action || 'apply' }}
       project: ${{ inputs.project || 'svc.plus' }}
       vault_env_path: ${{ inputs.vault_env_path || 'sit' }}
-      cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
+      cloud_provider: ${{ inputs.cloud_provider }}
       components_json: ${{ needs.prepare-matrix.outputs.account_components }}
       gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
       gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}
@@ -117,7 +117,7 @@ jobs:
       deploy_action: ${{ inputs.deploy_action || 'apply' }}
       project: ${{ inputs.project || 'svc.plus' }}
       vault_env_path: ${{ inputs.vault_env_path || 'sit' }}
-      cloud_provider: ${{ inputs.cloud_provider || 'aws-cloud' }}
+      cloud_provider: ${{ inputs.cloud_provider }}
       components_json: ${{ needs.prepare-matrix.outputs.resources_components }}
       gitops_repo_name: ${{ inputs.gitops_repo_name || 'https://github.com/cloud-neutral-workshop/gitops.git' }}
       gitops_repo_ref: ${{ inputs.gitops_repo_ref || 'main' }}

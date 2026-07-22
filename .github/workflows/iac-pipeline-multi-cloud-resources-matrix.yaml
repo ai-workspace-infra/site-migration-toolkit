@@ -27,8 +27,8 @@ on:
       cloud_provider:
         description: "服务商 / Cloud Provider"
         type: choice
-        options: [aws-cloud, gcp-cloud, vultr-vps]
-        default: aws-cloud
+        required: true
+        options: [aws-cloud, gcp-cloud, azure-cloud, vultr-vps]
       components_json:
         description: '资源层级组件选择 (JSON数组格式，如 ["s3","ec2"])'
         type: string
@@ -57,8 +57,7 @@ on:
         default: sit
       cloud_provider:
         type: string
-        required: false
-        default: aws-cloud
+        required: true
       components_json:
         type: string
         required: false
