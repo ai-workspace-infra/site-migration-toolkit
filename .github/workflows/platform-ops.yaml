@@ -571,6 +571,8 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        MATRIX_HOST: ${{ matrix.host }}
+        POSTGRES_ROOT_PASSWORD: ${{ steps.vault.outputs.POSTGRES_ROOT_PASSWORD }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_deploy_postgresql.sh
 
@@ -604,6 +606,7 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
         ACCOUNT_PG_PASSWORD: ${{ steps.vault.outputs.ACCOUNT_PG_PASSWORD }}
+        MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_provision_databases_and_roles.sh
 
@@ -687,6 +690,8 @@ jobs:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        PROVISION_ENV_SUFFIX: ${{ needs.provision.outputs.env_suffix }}
+        PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_deploy_monitoring_agents.sh
 
