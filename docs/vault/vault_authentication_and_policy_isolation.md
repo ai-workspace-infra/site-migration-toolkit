@@ -30,7 +30,7 @@
 | 配置 | 值 | 原因 |
 | --- | --- | --- |
 | `user_claim` | `sub` | 身份绑定到工作负载（repo+ref+workflow），而非触发者的 GitHub 用户名（`actor`）。 |
-| `job_workflow_ref` | 本仓库 5 个 workflow 文件的白名单（`@*` 收尾放行任意 ref） | **仓库里新增一个 workflow 换不到任何 role**。这是 ref 之外最关键的一道约束。 |
+| `job_workflow_ref` | 本仓库 6 个 workflow 文件的白名单（`@*` 收尾放行任意 ref，包含受保护的 `resize-instance.yaml`） | **仓库里新增一个 workflow 换不到任何 role**。这是 ref 之外最关键的一道约束。 |
 | `token_no_default_policy` | `true` | 不附加 `default` policy，最小权限。 |
 | `token_type` / `token_ttl` | `batch` / `20m` | 一次部署用不了 1 小时；batch token 不可续期。 |
 
