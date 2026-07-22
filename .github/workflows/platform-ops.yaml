@@ -83,6 +83,15 @@ on:
         - web-saas
         - infra-platform
         - agent-proxy
+      cloud_provider:
+        description: "云服务商 (目前仅 vultr-vps 已实现四个业务域的资源声明/凭据/Terraform 模块; 其余选项预留给未来多云支持, 选择后会在 provision 阶段直接失败, 不会被静默按 vultr 处理)"
+        required: true
+        type: choice
+        options:
+        - aws-cloud
+        - gcp-cloud
+        - azure-cloud
+        - vultr-vps
       instance_plan:
         description: "选择 VPS 规格 (全域建议 4C8G，单域支持 2C4G 矩阵，agent-proxy 默认 1C2G)"
         required: true
@@ -188,6 +197,17 @@ jobs:
       uses: actions/checkout@v7
       with:
         ref: ${{ github.event.inputs.toolkit_ref || '' }}
+
+    - name: Validate cloud_provider
+      # 目前 config/resources/{sit,uat,prod}/*.yaml、Vault 基础凭据(VULTR_API_KEY)、
+      # VPS_ROOT/ENV_DIR 全部写死指向 vultr-vps —— 四个业务域都没有 aws-cloud /
+      # gcp-cloud / azure-cloud 的资源声明或凭据。选了别的选项如果不在这里拦截,
+      # 会静默继续用 vultr-vps 的资源/凭据部署, 而 UI 上却显示选的是别的云 ——
+      # 这正是本仓这几天一直在消灭的那类"看起来选对了、实际部署到别的目标"。
+      if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.cloud_provider != 'vultr-vps' }}
+      run: |
+        echo "::error::cloud_provider='${{ github.event.inputs.cloud_provider }}' is not implemented in this workflow yet. Only 'vultr-vps' has resource declarations, credentials, and a wired Terraform module for the four business domains here. Choose vultr-vps, or wire up the other providers before selecting them." >&2
+        exit 1
 
     - name: Route ref to an explicit profile
       id: route
