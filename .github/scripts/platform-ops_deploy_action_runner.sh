@@ -9,4 +9,4 @@ ansible-playbook -i inventory/terraform_cmdb.py deploy_action_runner.yml \
   -e "github_runner_token=${GITHUB_RUNNER_TOKEN}" \
   -e "gitea_instance_url=${GITEA_INSTANCE_URL}" \
   -e "gitea_runner_token=${GITEA_RUNNER_TOKEN}" \
-  -e "runner_labels=self-hosted,ubuntu,iac-runner,${VAULT_ENV_PATH}"
+  -e "runner_labels=self-hosted,ubuntu,iac-runner,${VAULT_ENV_PATH:-uat}"

@@ -46,12 +46,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-action-runner-iac
+  group: deploy-action-runner-iac-${{ github.event.inputs.vault_env_path || 'uat' }}
   cancel-in-progress: false
 
 env:
   VAULT_ADDR: https://vault.svc.plus
-  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event.inputs.vault_env_path }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event.inputs.vault_env_path || 'uat' }}
   VAULT_KV: kv/data/CICD
   VAULT_KV_ACTION_RUNNER: kv/data/action-runner
   VPS_ROOT: infra/iac_modules/terraform-hcl-standard/vultr-vps
@@ -84,7 +84,7 @@ jobs:
             ${{ env.VAULT_KV }} TF_STATE_REGION | TF_STATE_REGION
 
       - name: Checkout iac_modules
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           repository: ai-workspace-infra/iac_modules
           ref: ${{ github.event.inputs.infra_ref || 'main' }}
@@ -94,19 +94,20 @@ jobs:
         with:
           terraform_version: "1.9.8"
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install render deps
-        run: pip install --quiet pyyaml jinja2
+        run: ${{ github.workspace }}/.github/scripts/platform-ops_provision_install-render-deps.sh
 
       - name: generate.py render (YAML -> 显式 HCL)
         working-directory: ${{ env.VPS_ROOT }}
         env:
+          VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path || 'uat' }}
           TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
           TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
-        run: python3 scripts/generate.py render --resources config/resources/${{ github.event.inputs.vault_env_path }}/action-runner.yaml --workdir envs/action-runner
+        run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy-action-runner-iac_generate_render.sh
 
       - name: Terraform init
         working-directory: ${{ env.VPS_ROOT }}/envs/action-runner
@@ -116,41 +117,36 @@ jobs:
           TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
           TF_STATE_BUCKET: ${{ steps.vault.outputs.TF_STATE_BUCKET }}
           TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
-        run: |
-          terraform init -input=false \
-            -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=action-runner-${{ github.event.inputs.vault_env_path }}/terraform.tfstate" \
-            -backend-config="region=${TF_STATE_REGION}"
+          VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path || 'uat' }}
+        run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy-action-runner-iac_terraform_init.sh
 
       - name: Terraform ${{ github.event.inputs.terraform_action }}
         working-directory: ${{ env.VPS_ROOT }}/envs/action-runner
         env:
+          TERRAFORM_ACTION: ${{ github.event.inputs.terraform_action }}
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
           TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
-        run: |
-          terraform ${{ github.event.inputs.terraform_action }} -auto-approve -input=false
+        run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy-action-runner-iac_terraform_action.sh
 
       - name: generate.py inventory (terraform output + YAML -> cmdb.json + inventory.ini)
         if: ${{ github.event.inputs.terraform_action == 'apply' }}
         working-directory: ${{ env.VPS_ROOT }}
         env:
+          VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path || 'uat' }}
           AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-        run: python3 scripts/generate.py inventory --resources config/resources/${{ github.event.inputs.vault_env_path }}/action-runner.yaml --workdir envs/action-runner
+        run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy-action-runner-iac_generate_inventory.sh
 
       - name: Build deploy matrix from cmdb.json
         id: matrix
         if: ${{ github.event.inputs.terraform_action == 'apply' }}
         working-directory: ${{ env.VPS_ROOT }}/envs/action-runner
-        run: |
-          hosts="$(jq -c 'keys' cmdb.json)"
-          echo "hosts=${hosts}" >> "$GITHUB_OUTPUT"
-          echo "count=$(jq 'length' cmdb.json)" >> "$GITHUB_OUTPUT"
+        run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy-action-runner-iac_build_matrix.sh
 
       - name: Upload CMDB + inventory artifact
         if: ${{ github.event.inputs.terraform_action == 'apply' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: action-runner-cmdb
           path: |
@@ -160,7 +156,7 @@ jobs:
   deploy:
     name: Deploy Runner on ${{ matrix.host }}
     needs: provision
-    if: ${{ needs.provision.outputs.count != '0' && github.event.inputs.terraform_action == 'apply' }}
+    if: ${{ needs.provision.outputs.count != '' && needs.provision.outputs.count != '0' && github.event.inputs.terraform_action == 'apply' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -168,19 +164,19 @@ jobs:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
       - name: Checkout playbooks
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           repository: ai-workspace-infra/playbooks
           ref: ${{ github.event.inputs.infra_ref || 'main' }}
           path: playbooks
 
       - name: Download CMDB
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: action-runner-cmdb
           path: cmdb
@@ -225,4 +221,5 @@ jobs:
           GITHUB_RUNNER_TOKEN: ${{ steps.vault.outputs.GITHUB_RUNNER_TOKEN }}
           GITEA_INSTANCE_URL: ${{ github.event.inputs.gitea_instance_url }}
           GITEA_RUNNER_TOKEN: ${{ steps.vault.outputs.GITEA_RUNNER_TOKEN }}
+          VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path || 'uat' }}
         run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_action_runner.sh
