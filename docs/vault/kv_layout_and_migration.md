@@ -18,7 +18,11 @@
 
 ## 1. 现状盘点与归位
 
-### `CICD` —— 需要拆开，现在是混装的
+> 以下内容基于 2026-07-22 用 Vault CLI 只读盘点的实际结果（仅读取路径与**键名**，未读取任何键值）。
+
+### `CICD` —— 24 个键混装在一起
+
+实际有 **24 个键**，远多于流水线用到的 12 个。按三层归位：
 
 | Key | 归属 | 目标路径 |
 |---|---|---|
@@ -26,8 +30,24 @@
 | `SSH_PRIVATE_DEPLOY_KEY_B64` | ② 基础凭据 | `kv/CICD/{sit,uat,prod}` |
 | `VULTR_API_KEY` | ② 基础凭据 | `kv/CICD/{sit,uat,prod}` |
 | `TF_STATE_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY/REGION` | ② 基础凭据 | `kv/CICD/{sit,uat,prod}` |
-| `CLOUDFLARE_DNS_API_TOKEN` | ② 建议（**待定**） | DNS 控制即基础设施控制。留在公共层意味着 sit role 能读到一个可以改生产 DNS 指向的凭据。拆分需要先在 Cloudflare 建按 zone 限定的 token。 |
-| `AI_WORKSPACE_AUTH_TOKEN` | **待确认** | 是否随环境变化未知，需要你判断。 |
+| `CLOUDFLARE_DNS_API_TOKEN` | ② 建议（**待定**） | DNS 控制即基础设施控制。留在公共层意味着 sit role 能读到一个可以改生产 DNS 指向的凭据。拆分需先在 Cloudflare 建按 zone 限定的 token。 |
+| `AI_WORKSPACE_AUTH_TOKEN` | **待确认** | 是否随环境变化未知。 |
+| `INTERNAL_SERVICE_TOKEN` | ⚠️ **三处重复** | 同时存在于 `CICD`、`WEB_SAAS`、`accounts.svc.plus`。需确认哪一份是权威。 |
+
+**另有 12 个键本仓 5 个 workflow 全都没有引用**：
+
+```
+BACKUP_ENCRYPTION_PASS            CODEX_GITHUB_PERSONAL_ACCESS_TOKEN
+CLOUDFLARE_ACCOUNT_ID             GPG_KEY_ID / GPG_PRIVATE_KEY
+CLOUDFLARE_API_TOKEN              NPM_TOKEN / OBS_TOKEN
+CLOUDFLARE_WEB_ANALYTICS_SITE_TAG SINGLE_NODE_VPS_SSH_PRIVATE_KEY
+SSH_PRIVATE_DEPLOY_KEY (非 B64)   SSH_PUBLIC_DEPLOY_KEY
+```
+
+> ⚠️ **「未引用」≠「可删除」**。`kv/CICD` 是跨仓库共享的路径，这些键很可能由
+> xworkspace-console 等其他仓库的流水线读取。删除前必须先跨仓确认，本文只负责指出
+> 「本仓不用」。`SSH_PRIVATE_DEPLOY_KEY` 与 `SSH_PUBLIC_DEPLOY_KEY` 看起来是
+> `SSH_PRIVATE_DEPLOY_KEY_B64` 的同源明文/公钥版本。
 
 ### 其余根路径
 
@@ -44,9 +64,24 @@
 | `gitea.svc.plus` | ③ 环境业务 | 迁往 `kv/<env>/gitea` | 由 `roles/vhosts/gitea` **运行时**读取。 |
 | `iam.svc.plus` | ③ 环境业务 | 迁往 `kv/<env>/iam` | 由 `roles/docker/zitadel` **运行时**读取。 |
 | `postgresql.svc.plus` | ③ 环境业务 | 迁往 `kv/<env>/postgresql` | 由 `roles/docker/postgres` **运行时**读取。 |
-| `cloud` | **待确认** | — | 本仓与 playbooks 仓均无引用，用途不明。 |
-| `github-actions/` | **待确认** | — | 无引用。可能是早期 role/policy 的遗留。 |
-| `xworkmate/` `xworkmate-bridge/` | 域外 | **不动** | 属于 xworkmate 产品线，不在 platform-ops 的环境模型内。 |
+| `cloud` | ② 基础凭据 | 迁往 `kv/CICD/<env>` 或独立多云路径 | 键为 `aws` / `azure` / `gcp`，是多云账号凭据——与 `VULTR_API_KEY` 同类。本仓 workflow 无引用，推测供 `iac-pipeline-multi-cloud-*` 或 landingzone 使用。 |
+| `github-actions/` | 域外 | **不动** | 子项为 `openclaw-multi-session-plugins` / `xworkmate-app` / `xworkmate-bridge`，是**其他仓库自己的 CI 密钥**（Android/Apple/Windows 签名证书、各自的 SSH key 等），不属于 platform-ops 的环境模型。 |
+| `xworkmate/` `xworkmate-bridge/` | 域外 | **不动** | 属于 xworkmate 产品线。 |
+
+### 已经符合模型的部分
+
+`kv/{sit,uat}/databases` 已经是第 ③ 层的正确形态，按服务分键：
+
+```
+account_pg_password  billing_pg_password  gitea_pg_password  litellm_pg_password
+rag_pg_password      vault_pg_password    zitadel_pg_password  postgres_root_password
+```
+
+**但它与根路径的 service 密钥重复**——`<env>/databases.account_pg_password` 对
+`WEB_SAAS.ACCOUNT_DB_PASSWORD`，`<env>/databases.gitea_pg_password` 对
+`gitea.svc.plus.DB_PASSWORD`。迁移时应以 `<env>/databases` 为准，而不是再造一份。
+
+> ⚠️ `uat/databases` **缺 `postgres_root_password`**（`sit/databases` 有）。两个环境的键集不一致。
 
 > 服务路径以 `*.svc.plus` 这种**生产域名**命名，本身就说明它们默认只有一份（即 prod 那份）。
 > 迁成 `kv/<env>/<service>` 之后名字里不再含环境信息，环境由路径前缀表达。
@@ -74,6 +109,17 @@
 
 **迁移第 4 步（从根路径删除基础凭据）之前必须先改完这 4 个**，否则它们会静默读到空值——
 `vault-action` 开着 `ignoreNotFound`，路径不存在只会得到空字符串，不会报错。
+
+### 2.2b `action-runner` 的键名对不上——workflow 读到的是空值
+
+`deploy-action-runner-iac.yaml` 读的是 `GITEA_RUNNER_TOKEN` 与 `GITHUB_RUNNER_TOKEN`，
+而 `kv/action-runner` 里**只有一个键 `TOKEN`**。
+
+`vault-action` 开着 `ignoreNotFound`，键不存在不会报错，两个变量都会拿到**空字符串**——
+runner 注册会拿着空 token 去跑。这是与 web-saas 假绿同一类的静默失败：
+**不是认证失败，而是拿到空值继续往下走**。
+
+需要确认 `TOKEN` 到底对应哪一个（还是两个 runner 共用一份），然后统一键名。
 
 ### 2.3 7 个 service 路径没有被任何 policy 授权
 
@@ -142,10 +188,22 @@ kv/
 
 ---
 
-## 5. 待你确认的三项
+## 5. 待你确认的四项
 
 1. **`CLOUDFLARE_DNS_API_TOKEN`** 是否拆成按环境？拆需要先建 Cloudflare 按 zone 限定的 token。
    不拆则 sit 可读到能改生产 DNS 的凭据。
-2. **`AI_WORKSPACE_AUTH_TOKEN`**、**`cloud`**、**`github-actions/`** 的用途与归属。
-3. **ansible 运行时 Vault 通路**（§2.4）要不要打通——这决定 7 个 service 路径是走 policy 授权，
+2. **`action-runner` 的 `TOKEN`**（§2.2b）对应 Gitea 还是 GitHub runner，还是两者共用？
+   现在两个变量都读到空值。
+3. **`AI_WORKSPACE_AUTH_TOKEN`** 是否随环境变化；**`INTERNAL_SERVICE_TOKEN`** 三处重复以哪份为准。
+4. **ansible 运行时 Vault 通路**（§2.4）要不要打通——这决定 7 个 service 路径是走 policy 授权，
    还是改为部署侧 Env 显式传入。
+
+## 6. 盘点口径
+
+本文的路径与键名来自 2026-07-22 用 Vault CLI 的只读盘点（`vault kv list` 与
+`vault kv get` 取 `keys`），**未读取也未记录任何键值**。引用关系来自对本仓 5 个
+使用 `vault-action` 的 workflow 的逐键精确匹配。
+
+`billing-service` 的键用 `PROD_` / `SANDBOX_` 前缀区分环境
+（`PROD_STRIPE_SECRET_KEY` / `SANDBOX_STRIPE_SECRET_KEY`）——这正是**用键名前缀代替路径层级**
+表达环境的反例，迁到 `kv/<env>/billing` 之后前缀应当去掉，由路径承载环境维度。
