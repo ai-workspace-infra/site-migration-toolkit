@@ -33,6 +33,16 @@ if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
   terraform_workspace="${rf}-${deployment_env}"
   state_key="platform-ops-toolkit/${deployment_env}/${rf}.tfstate"
   run="${INPUT_RUN_PROVISION_AND_DEPLOY}"
+
+  case "${deployment_env}" in
+    sit) env_suffix=-sit ;;
+    uat) env_suffix=-uat ;;
+    prod) env_suffix="" ;;
+    *)
+      echo "Unsupported workflow_dispatch vault_env_path: ${deployment_env}" >&2
+      exit 1
+      ;;
+  esac
   
   user_action="${INPUT_ACTION}"
   if [ "$user_action" = "destroy" ]; then
