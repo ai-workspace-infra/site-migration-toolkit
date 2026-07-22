@@ -5,3 +5,7 @@ fix_nat.py
 fix_policy.py
 fix_vault.py
 merge_actions.py
+
+# Python bytecode
+__pycache__/
+*.py[cod]
