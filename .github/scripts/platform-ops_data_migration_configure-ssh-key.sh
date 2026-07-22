@@ -1,4 +1,5 @@
-#!/bin/bash
-mkdir -p ~/.ssh
-printf '%s' "${VAULT_ANSIBLE_SSH_KEY_B64}" | base64 -d > ~/.ssh/id_deploy
-chmod 600 ~/.ssh/id_deploy
+#!/usr/bin/env bash
+set -e
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${DIR}/common_configure_ssh_key.sh"

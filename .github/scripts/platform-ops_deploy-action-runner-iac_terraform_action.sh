@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -e
 
-TERRAFORM_ACTION="${TERRAFORM_ACTION:-apply}"
-
-terraform "${TERRAFORM_ACTION}" -auto-approve -input=false
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${DIR}/common_terraform_apply_destroy.sh"

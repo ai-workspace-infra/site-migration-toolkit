@@ -1,3 +1,5 @@
-#!/bin/bash
-terraform workspace select -or-create ${ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_WORKSPACE}
-terraform ${ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_ACTION} -auto-approve -input=false
+#!/usr/bin/env bash
+set -e
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${DIR}/common_terraform_apply_destroy.sh"
