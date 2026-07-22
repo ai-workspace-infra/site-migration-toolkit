@@ -1,4 +1,7 @@
 #!/bin/bash
+set -eo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/common_require_env.sh"
+require_env MATRIX_HOST PROVISION_ENV_SUFFIX PROVISION_TARGET_DOMAIN_BASE GHCR_USERNAME GHCR_PASSWORD
 jq -n \
   --arg hosts "${MATRIX_HOST}" \
   --arg image "ghcr.io/ai-workspace-services/console:latest" \

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -e
+. "$(dirname "${BASH_SOURCE[0]}")/common_require_env.sh"
+require_env MATRIX_HOST VAULT_ENV_PATH RUNNER_ENGINE
 
 AI_WORKSPACE_CMDB_JSON=../cmdb/cmdb.json \
 ansible-playbook -i inventory/terraform_cmdb.py deploy_action_runner.yml \
