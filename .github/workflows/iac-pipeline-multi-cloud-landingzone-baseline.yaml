@@ -2,6 +2,9 @@ name: Multi Cloud LandingZone Baseline
 
 on:
   push:
+    paths:
+    - 'terraform-hcl-standard/**'
+    - '.github/workflows/iac-pipeline-multi-cloud-landingzone-baseline.yaml'
   pull_request:
     paths:
     - 'terraform-hcl-standard/**'
@@ -9,10 +12,6 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      toolkit_ref:
-        description: "platform-ops-toolkit 仓库的 Git Ref (例如 main, v1.0.0)。用于跨 Tag 触发时拉取指定代码"
-        required: false
-        type: string
       deploy_action:
         description: "Deployment action"
         type: choice
@@ -102,8 +101,6 @@ jobs:
     steps:
     - name: Checkout Toolkit
       uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
     - name: Checkout iac_modules
       uses: actions/checkout@v4
