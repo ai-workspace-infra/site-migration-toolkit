@@ -169,7 +169,7 @@ jobs:
         env:
           VULTR_API_KEY: ${{ steps.vault.outputs.VULTR_API_KEY }}
           INSTANCE_ID: ${{ inputs.instance_id }}
-        run: ${{ github.workspace }}/.github/scripts/resize-instance_create-backup.sh
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_vultr-vps_create-backup.sh
 
       - name: Apply upgrade or create replacement
         id: terraform
