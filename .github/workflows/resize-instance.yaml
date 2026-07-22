@@ -1,0 +1,170 @@
+name: Resize Instance
+
+on:
+  workflow_dispatch:
+    inputs:
+      vault_env_path:
+        description: "Environment containing the instance"
+        required: true
+        type: choice
+        options: [sit, uat, prod]
+      target_domain:
+        description: "Public hostname used for health checks and DNS cutover"
+        required: true
+        type: string
+      instance_id:
+        description: "Current Vultr instance ID"
+        required: true
+        type: string
+      target_plan:
+        description: "Desired Vultr plan"
+        required: true
+        type: choice
+        options: [vc2-1c-2gb, vc2-2c-4gb, vc2-4c-8gb]
+      resize_mode:
+        description: "auto detects upgrade/downgrade from the current plan"
+        required: true
+        default: auto
+        type: choice
+        options: [auto, upgrade, downgrade]
+      confirm_resize:
+        description: "Required for downgrade/replacement operations"
+        required: true
+        default: false
+        type: boolean
+      switch_dns:
+        description: "Switch the Cloudflare A record after health checks"
+        required: true
+        default: false
+        type: boolean
+      cloudflare_zone_id:
+        description: "Cloudflare zone ID; required when switch_dns=true"
+        required: false
+        type: string
+      destroy_old_instance:
+        description: "Explicitly destroy the source instance after cutover"
+        required: true
+        default: false
+        type: boolean
+      observation_seconds:
+        description: "Source-instance observation window before cleanup"
+        required: true
+        default: "1800"
+        type: string
+      infra_ref:
+        description: "iac_modules ref containing resize-instance module"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: resize-instance-${{ github.event.inputs.vault_env_path }}-${{ github.event.inputs.instance_id }}
+  cancel-in-progress: false
+
+env:
+  VAULT_ADDR: https://vault.svc.plus
+  VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path }}
+  VAULT_ROLE: github-actions-platform-ops-toolkit-${{ github.event.inputs.vault_env_path }}
+  VAULT_KV_BASE: kv/data/CICD/${{ github.event.inputs.vault_env_path }}
+
+jobs:
+  resize:
+    name: Resize ${{ inputs.target_domain }}
+    runs-on: ubuntu-latest
+    environment: resize-${{ inputs.vault_env_path }}
+    steps:
+      - name: Checkout toolkit
+        uses: actions/checkout@v7
+
+      - name: Checkout iac_modules
+        uses: actions/checkout@v7
+        with:
+          repository: ai-workspace-infra/iac_modules
+          ref: ${{ inputs.infra_ref }}
+          path: infra/iac_modules
+
+      - name: Load resize credentials
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: ${{ env.VAULT_ROLE }}
+          jwtGithubAudience: vault
+          exportToken: true
+          secrets: |
+            ${{ env.VAULT_KV_BASE }} VULTR_API_KEY | VULTR_API_KEY ;
+            ${{ env.VAULT_KV_BASE }} CLOUDFLARE_API_TOKEN | CLOUDFLARE_API_TOKEN
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Preflight current instance and resize direction
+        id: preflight
+        env:
+          VULTR_API_KEY: ${{ steps.vault.outputs.VULTR_API_KEY }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          TARGET_PLAN: ${{ inputs.target_plan }}
+          RESIZE_MODE: ${{ inputs.resize_mode }}
+          CONFIRM_RESIZE: ${{ inputs.confirm_resize }}
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_preflight.sh
+
+      - name: Create backup snapshot
+        id: backup
+        if: steps.preflight.outputs.direction == 'downgrade'
+        env:
+          VULTR_API_KEY: ${{ steps.vault.outputs.VULTR_API_KEY }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_create-backup.sh
+
+      - name: Apply upgrade or create replacement
+        id: terraform
+        if: steps.preflight.outputs.direction != 'same'
+        env:
+          IAC_ROOT: ${{ github.workspace }}/infra/iac_modules
+          OPERATION_ID: ${{ steps.preflight.outputs.operation_id }}
+          DIRECTION: ${{ steps.preflight.outputs.direction }}
+          TARGET_PLAN: ${{ inputs.target_plan }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          REGION: ${{ steps.preflight.outputs.region }}
+          OS_ID: ${{ steps.preflight.outputs.os_id }}
+          LABEL: ${{ steps.preflight.outputs.label }}
+          SNAPSHOT_ID: ${{ steps.backup.outputs.snapshot_id }}
+          VULTR_API_KEY: ${{ steps.vault.outputs.VULTR_API_KEY }}
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_apply-terraform.sh
+
+      - name: Health check replacement
+        if: steps.preflight.outputs.direction == 'downgrade'
+        env:
+          REPLACEMENT_IP: ${{ steps.terraform.outputs.replacement_ip }}
+          TARGET_DOMAIN: ${{ inputs.target_domain }}
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_healthcheck.sh
+
+      - name: Switch DNS after health check
+        if: inputs.switch_dns && steps.preflight.outputs.direction == 'downgrade'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ inputs.cloudflare_zone_id }}
+          TARGET_DOMAIN: ${{ inputs.target_domain }}
+          REPLACEMENT_IP: ${{ steps.terraform.outputs.replacement_ip }}
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_switch-dns.sh
+
+      - name: Observation window
+        if: steps.preflight.outputs.direction == 'downgrade'
+        env:
+          OBSERVATION_SECONDS: ${{ inputs.observation_seconds }}
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_observe.sh
+
+      - name: Destroy source instance only after explicit confirmation
+        if: inputs.destroy_old_instance && steps.preflight.outputs.direction == 'downgrade' && inputs.switch_dns
+        env:
+          VULTR_API_KEY: ${{ steps.vault.outputs.VULTR_API_KEY }}
+          INSTANCE_ID: ${{ inputs.instance_id }}
+          REPLACEMENT_IP: ${{ steps.terraform.outputs.replacement_ip }}
+        run: ${{ github.workspace }}/.github/scripts/resize-instance_destroy-old.sh

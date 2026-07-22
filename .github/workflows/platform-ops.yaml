@@ -273,7 +273,7 @@ jobs:
       if: steps.route.outputs.run_provision_and_deploy == 'true'
       id: plan
       env:
-        INPUT_DOMAIN_____ALL_: ${{ github.event.inputs.domain || 'all' }}
+        INPUT_DOMAIN_____ALL_: ${{ github.event.inputs.target_domains || 'all' }}
         INPUT_INSTANCE_PLAN_____4C8G_: ${{ github.event.inputs.instance_plan || '4C8G' }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_map-instance-plan.sh
