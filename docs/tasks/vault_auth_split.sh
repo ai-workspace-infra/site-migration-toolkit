@@ -26,7 +26,7 @@ set -euo pipefail
 #      《vault_authentication_and_policy_isolation.md》自己的安全警告矛盾。
 #
 # 硬化要点: user_claim 用 sub 而非 actor; 钉死 job_workflow_ref(只有本仓库这
-# 5 个 workflow 文件能换 token, 新加的 workflow 换不到); ref 绑定与流水线真实
+# 6 个 workflow 文件能换 token, 新加的 workflow 换不到); ref 绑定与流水线真实
 # 触发路径对齐; batch token + 20m TTL + 去掉 default policy。
 #
 # ⚠️ 行为变更: prod 现在只能由 `v*` tag 触发。workflow_dispatch 选 prod 会认证
@@ -48,6 +48,7 @@ REPO="ai-workspace-infra/platform-ops-toolkit"
 WF_PREFIX="${REPO}/.github/workflows"
 read -r -d '' ALLOWED_WORKFLOWS <<EOF || true
     "${WF_PREFIX}/platform-ops.yaml@*",
+    "${WF_PREFIX}/resize-instance.yaml@*",
     "${WF_PREFIX}/deploy-action-runner-iac.yaml@*",
     "${WF_PREFIX}/iac-pipeline-multi-cloud-account-matrix.yaml@*",
     "${WF_PREFIX}/iac-pipeline-multi-cloud-resources-matrix.yaml@*",
@@ -221,7 +222,7 @@ EOF
 
 # sit: PR 验证 + 非 main 分支的 workflow_dispatch。ref 仍然较宽(PR 与分支都要
 # 放行), 真正的收敛来自 job_workflow_ref 白名单 —— 换 token 只能通过本仓库
-# 已有的 5 个 workflow, 自己新加一个 workflow 是换不到的。
+# 已有的 6 个 workflow, 自己新加一个 workflow 是换不到的。
 echo "Creating SIT role (PR + branch dispatch)..."
 write_role sit github-actions-platform-ops-toolkit-sit \
   '["refs/pull/*/merge", "refs/heads/*"]'
