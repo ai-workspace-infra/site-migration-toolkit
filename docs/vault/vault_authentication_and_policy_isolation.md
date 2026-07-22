@@ -44,24 +44,25 @@
 
 除了 Role 的触发源隔离外，每个 Role 背后所绑定的 Vault Policy 也对其实际能够读写的 KV 数据范围做了强隔离。
 
+路径分两类：**公共服务 secret** 三个环境共读、不按环境拆分；**环境专属 secret** 严格隔离。
+
 | 目标环境 (Env) | Vault Policy 名称 | 可读写的基础核心密钥范围 (KV Path) |
 | --- | --- | --- |
-| **`sit`** | `github-actions-platform-ops-toolkit-sit` | 读写：`kv/data/sit/*`<br>只读：`kv/data/CICD/sit`, `kv/data/openclaw`, `kv/data/action-runner`<br><sub>PHASE 1 迁移期额外只读：`kv/data/CICD`</sub> |
-| **`uat`** | `github-actions-platform-ops-toolkit-uat` | 读写：`kv/data/uat/*`<br>只读：`kv/data/CICD/uat`, `kv/data/openclaw`, `kv/data/action-runner`, `kv/data/WEB_SAAS`<br><sub>PHASE 1 迁移期额外只读：`kv/data/CICD`</sub> |
-| **`prod`** | `github-actions-platform-ops-toolkit-prod` | 读写：`kv/data/prod/*`（**无 `delete`**）<br>只读：`kv/data/CICD/prod`, `kv/data/openclaw`, `kv/data/action-runner`, `kv/data/WEB_SAAS`<br><sub>PHASE 1 迁移期额外只读：`kv/data/CICD`</sub> |
+| **`sit`** | `github-actions-platform-ops-toolkit-sit` | 读写：`kv/data/sit/*`<br>只读（公共）：`kv/data/CICD`, `kv/data/openclaw`, `kv/data/action-runner` |
+| **`uat`** | `github-actions-platform-ops-toolkit-uat` | 读写：`kv/data/uat/*`<br>只读（公共）：`kv/data/CICD`, `kv/data/openclaw`, `kv/data/action-runner`<br>只读（业务）：`kv/data/WEB_SAAS` |
+| **`prod`** | `github-actions-platform-ops-toolkit-prod` | 读写：`kv/data/prod/*`（**无 `delete`**）<br>只读（公共）：`kv/data/CICD`, `kv/data/openclaw`, `kv/data/action-runner`<br>只读（业务）：`kv/data/WEB_SAAS` |
 
-### 2.1 共享基础路径才是真实的爆炸半径
+### 2.1 为什么 `kv/data/CICD` 是共享的，不按环境拆分
 
-原设计里三个环境**共享** `kv/data/CICD`，而该路径存放 `VULTR_API_KEY`、`TF_STATE_*`、`SSH_PRIVATE_DEPLOY_KEY_B64`、`GHCR_TOKEN`。这意味着**最松的那个 role 决定了整个系统的真实权限**：sit 可由任意分支换取，于是任何能推分支的人都能拿到全部云凭据与全主机 SSH 私钥——按环境隔离在这条路径上并不成立。
+该路径存放的是**公共服务凭据**：GHCR 镜像拉取凭据、云账号 API key、TF state 后端凭据、SSH 部署密钥。这些是全平台共用的公共能力——拉的是同一批镜像、访问的是同一个云账号、写的是同一个 state 后端——**本身不存在「环境」这个维度**。拆成 sit/uat/prod 三份只会产生三份需要同步轮换的副本，不产生隔离收益。
 
-因此基础凭据改为**按环境拆分**为 `kv/data/CICD/<env>`，各 role 只读自己那份。迁移分两阶段：
+关于共享路径的爆炸半径，需要说清楚一件事：**共享路径的风险上限由「最松的那个 role」决定**。
 
-- **PHASE 1（当前）**：同时授予 `kv/data/CICD/<env>` 与旧的共享 `kv/data/CICD`，保证流水线不中断。
-- **PHASE 2**：删除 `vault_auth_split.sh` 中标记 `LEGACY` 的两段并重跑，收回共享路径读权限。
+原先 sit role 只绑 `repository`、没有任何 ref / workflow 约束，任何人推个分支、加个自己的 workflow 就能换到 sit token 并读走 `kv/data/CICD` 里的全部云凭据和全主机 SSH 私钥——**那个状态下共享确实是危险的**。
 
-> ⚠️ **拆路径不能替代换密钥**：PHASE 2 的真正前提是先为每个环境准备**各自独立的凭据**（独立 Vultr API key、独立 TF state 密钥、独立 SSH 部署密钥对）。若三个环境仍共用同一把 SSH 私钥，无论 Vault 路径怎么拆，sit 失陷仍等于 prod 失陷。拆路径只是把凭据复用问题暴露出来。
+本次把三个 role 全部钉死到 `job_workflow_ref` 白名单加各自的 `ref` 之后，能换到 token 的路径已收敛到本仓库这 5 个 workflow 文件，仓库里新加一个 workflow 换不到任何 role。**真正堵住提权的是绑定收紧，而不是拆路径**——所以共享 `kv/data/CICD` 在当前绑定下是可接受的。
 
-> ⚠️ **同类未决问题**：`kv/data/WEB_SAAS` 目前由 uat 与 prod 共读，内含 `POSTGRES_ROOT_PASSWORD`、`ACCOUNT_DB_PASSWORD` 等——即 uat 与 prod 共用同一套数据库口令，属于与 CICD 相同的跨环境凭据复用，后续应同样按环境拆分。
+> ⚠️ **未决问题（性质不同）**：`kv/data/WEB_SAAS` 由 uat 与 prod 共读，内含 `POSTGRES_ROOT_PASSWORD`、`ACCOUNT_DB_PASSWORD`——即两个环境共用同一套数据库口令。**数据库口令是环境专属的业务密钥，不是公共服务凭据**，与 `kv/data/CICD` 不是一回事，后续应拆分为 `kv/data/<env>/web-saas`。
 
 > ⚠️ **其他安全约束**：
 > 1. `sit` Role 绑定的 Policy 绝对不能包含 `kv/data/uat/*` 或 `kv/data/prod/*` 的读写权限。

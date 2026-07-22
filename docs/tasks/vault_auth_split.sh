@@ -57,19 +57,39 @@ EOF
 # -----------------------------------------------------------------------------
 # Policies
 #
-# PHASE 1 (当前): 同时授予新的按环境路径 kv/data/CICD/<env> 和旧的共享
-#   kv/data/CICD, 保证迁移期间流水线不中断。
-# PHASE 2 (数据迁移完成后): 删掉下面标了 "LEGACY" 的两段, 再跑一次本脚本。
-#   届时 sit 被攻破只会泄露 sit 自己的云凭据, 而不是全环境的。
+# 路径分两类:
 #
-# ⚠️ PHASE 2 的前提不是改 policy, 而是先真正准备好"每个环境各自独立的凭据":
-#   独立的 Vultr API key、独立的 TF state 访问密钥、独立的 SSH 部署密钥对。
-#   如果三个环境共用同一把 SSH 私钥, 那么无论 Vault 路径怎么拆, sit 失陷
-#   仍然等于 prod 失陷 —— 拆路径只是把凭据复用问题暴露出来, 不能替代换密钥。
+#   1. 公共服务 secret —— 共享, 不按环境拆分:
+#        kv/data/CICD          镜像仓库拉取凭据(GHCR)、云账号 API key、
+#                              TF state 后端凭据、SSH 部署密钥
+#        kv/data/openclaw
+#        kv/data/action-runner
+#      这些是全平台共用的公共能力(拉镜像、访问同一个云账号、访问同一个 state
+#      后端), 本身不存在"环境"的概念, 拆成 sit/uat/prod 三份只会产生三份需要
+#      同步轮换的副本, 不产生隔离收益。
+#
+#   2. 环境专属 secret —— 严格隔离:
+#        kv/data/<env>/*       该环境自己的业务密钥, 各 role 只能读写自己那份
+#
+# 关于共享路径的爆炸半径: 共享路径的风险上限由"最松的那个 role"决定。原先
+# sit role 只绑 repository、没有任何 ref / workflow 约束, 任何人推个分支加个
+# workflow 就能换到 sit token 并读走 kv/data/CICD —— 那时共享确实是危险的。
+# 本次把三个 role 都钉死到 job_workflow_ref 白名单 + 各自的 ref 之后, 能换到
+# token 的路径已经收敛到本仓库这 5 个 workflow 文件, 共享路径的风险随之下降。
+# 也就是说: 真正堵住提权的是绑定收紧, 而不是拆路径。
 # -----------------------------------------------------------------------------
 
+# 公共服务 secret: 三个环境共读, 不按环境拆分。
 emit_common_read_paths() {
   cat <<'EOF'
+# 公共服务凭据(GHCR 拉取 / 云账号 / TF state 后端 / SSH 部署密钥)。
+# 全平台共用的公共能力, 不存在环境维度, 因此不拆分为 sit/uat/prod。
+path "kv/data/CICD" {
+  capabilities = ["read"]
+}
+path "kv/metadata/CICD" {
+  capabilities = ["list", "read"]
+}
 path "kv/data/openclaw" {
   capabilities = ["read"]
 }
@@ -86,29 +106,12 @@ EOF
 emit_env_policy() {
   local env="$1"
 
-  cat <<EOF
-# ${env} environment: 该环境自己的 CI/CD 基础凭据
-path "kv/data/CICD/${env}" {
-  capabilities = ["read"]
-}
-path "kv/metadata/CICD/${env}" {
-  capabilities = ["list", "read"]
-}
-
-# LEGACY (PHASE 1 only) —— 迁移完成后删除这两段
-path "kv/data/CICD" {
-  capabilities = ["read"]
-}
-path "kv/metadata/CICD" {
-  capabilities = ["list", "read"]
-}
-EOF
-
   emit_common_read_paths
 
   # WEB_SAAS 目前是 uat / prod 共读(内含 POSTGRES_ROOT_PASSWORD /
-  # ACCOUNT_DB_PASSWORD 等)。这意味着 uat 与 prod 共用同一套数据库口令,
-  # 属于与 CICD 同类的跨环境凭据复用问题, 后续应同样按环境拆分。
+  # ACCOUNT_DB_PASSWORD 等), 即 uat 与 prod 共用同一套数据库口令。这与
+  # kv/data/CICD 不同 —— 数据库口令是环境专属的业务密钥, 不是公共服务凭据,
+  # 后续应拆分为 kv/data/<env>/web-saas。
   if [ "${env}" != "sit" ]; then
     cat <<'EOF'
 path "kv/data/WEB_SAAS" {
@@ -194,8 +197,9 @@ ${ALLOWED_WORKFLOWS}
 EOF
 }
 
-# sit: PR 验证 + 非 main 分支的 workflow_dispatch。ref 仍然较宽, 真正的收敛
-# 来自 job_workflow_ref 白名单, 以及 PHASE 2 之后 sit 只能读自己的凭据。
+# sit: PR 验证 + 非 main 分支的 workflow_dispatch。ref 仍然较宽(PR 与分支都要
+# 放行), 真正的收敛来自 job_workflow_ref 白名单 —— 换 token 只能通过本仓库
+# 已有的 5 个 workflow, 自己新加一个 workflow 是换不到的。
 echo "Creating SIT role (PR + branch dispatch)..."
 write_role sit github-actions-platform-ops-toolkit-sit \
   '["refs/pull/*/merge", "refs/heads/*"]'
@@ -217,10 +221,12 @@ vault delete auth/jwt/role/github-actions-platform-ops-toolkit-prod-tags 2>/dev/
   || echo "  (not present, nothing to remove)"
 
 echo
-echo "Done."
+echo "Done. 3 个 policy + 3 个 role 已生效, 死角色 -prod-tags 已清理。"
 echo
-echo "PHASE 1 完成。接下来要做的(按顺序):"
-echo "  1. 为每个环境生成各自独立的凭据(Vultr API key / TF state 密钥 / SSH 部署密钥对)。"
-echo "  2. 写入 kv/CICD/sit、kv/CICD/uat、kv/CICD/prod。"
-echo "  3. 把 workflow 里的 VAULT_KV 从 kv/data/CICD 改为 kv/data/CICD/\${DEPLOY_ENV}。"
-echo "  4. 删除本脚本中标记 LEGACY 的两段, 重新执行, 收回对共享 kv/data/CICD 的读权限。"
+echo "注意行为变更: prod 现在只接受 v* tag。workflow_dispatch 选 prod 会认证失败,"
+echo "这与分支规范'生产部署只经 annotated tag'一致。"
+echo
+echo "后续待办(未包含在本脚本中):"
+echo "  - kv/data/WEB_SAAS 目前由 uat 与 prod 共读, 内含数据库口令。数据库口令是"
+echo "    环境专属的业务密钥(不同于 kv/data/CICD 那类公共服务凭据), 应拆分为"
+echo "    kv/data/<env>/web-saas, 让两个环境不再共用同一套口令。"
