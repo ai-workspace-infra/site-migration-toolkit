@@ -407,28 +407,27 @@ jobs:
   # 步骤 2: 基础环境安装 (Bootstrap Deploy)
   # ---------------------------------------------------------------------------
   deploy_base:
-    name: Deploy Base Services on ${{ matrix.host }}
-    # 只负责 ai-workspace 域 (litellm/qmd/x-memory-hub/postgres/gateway-openclaw 等),
-    # 不要对 web-saas / infra-platform 域跑这个全家桶安装器。
+    name: Bootstrap Node on ${{ matrix.host }}
+    # 只初始化节点；服务安装由后续 deploy_* jobs 负责。
     needs: provision
-    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","ai-workspace"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_ai_workspace != '[]' }}
+    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && needs.provision.outputs.hosts != '[]' && needs.provision.outputs.hosts != '' }}
     runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        host: ${{ fromJSON(needs.provision.outputs.hosts_ai_workspace) }}
+        host: ${{ fromJSON(needs.provision.outputs.hosts) }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
       with:
         ref: ${{ github.event.inputs.toolkit_ref || '' }}
 
-    - name: Checkout xworkspace-console helpers
+    - name: Checkout playbooks
       uses: actions/checkout@v7
       with:
-        repository: ai-workspace-lab/xworkspace-console
-        ref: ${{ needs.provision.outputs.console_ref || 'main' }}
-        path: xworkspace-console
+        repository: ai-workspace-infra/playbooks
+        ref: ${{ needs.provision.outputs.infra_ref }}
+        path: playbooks
 
     - name: Download CMDB
       uses: actions/download-artifact@v8
@@ -461,21 +460,18 @@ jobs:
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
-    - name: Deploy AI Workspace Compose Stack
-      working-directory: playbooks
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        MATRIX_HOST: ${{ matrix.host }}
-      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_deploy-ai-workspace-compose.sh
+    - name: Install Ansible
+      run: ${{ github.workspace }}/.github/scripts/common_install_ansible.sh
 
-    - name: Deploy Openclaw & Hermes (Systemd)
+    - name: Bootstrap node according to CMDB role
       working-directory: playbooks
       env:
         ANSIBLE_HOST_KEY_CHECKING: "False"
         ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+        VAULT_ADDR: ${{ env.VAULT_ADDR }}
+        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
         MATRIX_HOST: ${{ matrix.host }}
-      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_deploy-systemd-services.sh
+      run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_bootstrap-node.sh
 
 
   # ---------------------------------------------------------------------------
@@ -495,7 +491,7 @@ jobs:
   deploy_web_saas:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
     needs: provision
-    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && contains(fromJSON('["all","web-saas"]'), needs.provision.outputs.target_domains)  && needs.provision.outputs.hosts_web_saas != '[]' }}
+    if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && (needs.provision.outputs.target_domains == 'all' || needs.provision.outputs.target_domains == 'web-saas') && needs.provision.outputs.hosts_web_saas != '[]' && needs.provision.outputs.hosts_web_saas != '' }}
     runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
