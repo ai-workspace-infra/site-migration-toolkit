@@ -382,14 +382,6 @@ jobs:
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_build-deploy-matrix.sh
 
-    - name: Upload CMDB artifact
-      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
-      uses: actions/upload-artifact@v7
-      with:
-        name: platform-ops-toolkit-cmdb
-        path: |
-          ${{ env.ENV_DIR }}/cmdb.json
-          ${{ env.ENV_DIR }}/inventory.ini
 
     - name: Initialize Databases Credentials
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
