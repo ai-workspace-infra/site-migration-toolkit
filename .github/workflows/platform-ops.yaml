@@ -495,7 +495,8 @@ jobs:
         ignoreNotFound: true
         secrets: |
           ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-          ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN
+          ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN ;
+          ${{ env.VAULT_KV }} DOCO_CD_GIT_ACCESS_TOKEN | DOCO_CD_GIT_ACCESS_TOKEN
 
     - name: Configure SSH Key
       env:
@@ -514,6 +515,10 @@ jobs:
       working-directory: playbooks
       env:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
+        # setup-Doco-CD.yaml 需要它。角色自己也能回落到 Vault 查询, 但那条路要求
+        # 把 Vault token 交给 Ansible controller —— 在这里取好用 env 传进去,
+        # 密钥读取就仍然只发生在 workflow 这一处, 可审计。
+        DOCO_CD_GIT_ACCESS_TOKEN: ${{ steps.vault.outputs.DOCO_CD_GIT_ACCESS_TOKEN }}
         # MATRIX_HOST / ANSIBLE_HOST_KEY_CHECKING / ANSIBLE_SSH_ARGS from job env
       run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_bootstrap-node.sh
 

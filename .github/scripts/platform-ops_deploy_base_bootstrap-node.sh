@@ -31,5 +31,13 @@ if [[ -z "${playbook}" ]]; then
   exit 1
 fi
 
+# vault-action 开着 ignoreNotFound, 键名写错或路径里没这个键都只会拿到空串。
+# 不在这里断言的话, 失败会沉到 Doco-CD role 的 assert 里, 报 "Set
+# DOCO_CD_GIT_ACCESS_TOKEN" —— 完全没说该去哪个 Vault 路径设。
+if [ "${playbook}" = "setup-Doco-CD.yaml" ] && [ -z "${DOCO_CD_GIT_ACCESS_TOKEN:-}" ]; then
+  echo "::error::DOCO_CD_GIT_ACCESS_TOKEN is empty; setup-Doco-CD.yaml cannot bootstrap ${MATRIX_HOST}. Set key DOCO_CD_GIT_ACCESS_TOKEN under Vault path ${VAULT_KV:-kv/data/CICD}." >&2
+  exit 1
+fi
+
 echo "Bootstrapping ${MATRIX_HOST} with ${playbook}"
 ansible-playbook -i ../cmdb/inventory.ini -l "${MATRIX_HOST}" "${playbook}"
