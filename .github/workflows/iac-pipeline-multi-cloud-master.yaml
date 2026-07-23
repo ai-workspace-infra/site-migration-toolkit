@@ -92,7 +92,8 @@ jobs:
   account:
     needs: [landingzone, prepare-matrix]
     if: |
-      always() && 
+      always() &&
+      needs.prepare-matrix.result == 'success' &&
       (inputs.run_account != false) &&
       (needs.landingzone.result == 'success' || needs.landingzone.result == 'skipped')
     uses: ./.github/workflows/iac-pipeline-multi-cloud-account-matrix.yaml
@@ -109,7 +110,8 @@ jobs:
   resources:
     needs: [account, prepare-matrix]
     if: |
-      always() && 
+      always() &&
+      needs.prepare-matrix.result == 'success' &&
       (inputs.run_resources != false) &&
       (needs.account.result == 'success' || needs.account.result == 'skipped')
     uses: ./.github/workflows/iac-pipeline-multi-cloud-resources-matrix.yaml
