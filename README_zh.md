@@ -28,19 +28,6 @@
 
 各域详细的迁移、备份、恢复策略，请查阅各子域目录内的 `README.md`。
 
-## 🚀 编排与使用
-
-*注：编排层正在从旧版单体 Python 脚本向 Ansible / Make 支持的模块化架构过渡。*
-
-可通过全局入口命令，指定一个或多个 `DOMAIN` 执行按需备份或迁移：
-
-```bash
-# 示例：仅对 ai-workspace 与 open-platform 两个域做数据备份
-make backup DOMAIN=ai-workspace,open-platform
-
-# 示例：一键触发全站各域的迁移与恢复流水线
-make migrate DOMAIN=all
-```
 
 ## 🛠️ CI/CD 与 IaC 流水线
 
