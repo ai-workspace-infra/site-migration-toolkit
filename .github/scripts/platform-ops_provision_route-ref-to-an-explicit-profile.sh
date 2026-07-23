@@ -169,6 +169,11 @@ case "${deployment_env}" in
 esac
 : "${deploy_tag:?route: deploy_tag was never assigned on this trigger path}"
 
+# docker tag 里 '/' 非法, 所以 release/1.4 的镜像实际叫 release-1.4
+# (docker/metadata-action 自己就这么转)。这里不转的话, CD 会去 pull 一个
+# 从来没有被推送过的 tag。规则见 docs/domains/IMAGE-TAG-CONTRACT.md。
+deploy_tag="${deploy_tag//\//-}"
+
 for key in deployment_env resource_file terraform_workspace state_key run_infrastructure run_application_deploy target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch deploy_tag; do
   value="${!key:-}"
   echo "$key=$value" >> "$GITHUB_OUTPUT"
