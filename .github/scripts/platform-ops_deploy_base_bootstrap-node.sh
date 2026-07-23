@@ -13,6 +13,10 @@ for group in "${node_groups[@]}"; do
       playbook=setup-Doco-CD.yaml
       break
       ;;
+    ai_workspace)
+      playbook=setup-ai-workspace-rootless.yml
+      break
+      ;;
     k3s|k3s_server|k3s_agent)
       playbook=setup-k3s-node.yaml
       ;;
