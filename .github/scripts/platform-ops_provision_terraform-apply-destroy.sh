@@ -6,7 +6,6 @@ terraform workspace select -or-create "${ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_WORKS
 ACTION="${ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_ACTION}"
 case "${ACTION}" in
   plan)
-    # plan 不接受 -auto-approve; 也不产生任何变更。
     terraform plan -input=false
     ;;
   apply)
@@ -24,6 +23,7 @@ case "${ACTION}" in
         end;
       [ .resource_changes[]?
         | select(.type == "vultr_instance")
+        | select(.change.actions == ["update"])
         | .change as $change
         | ($change.before.plan | rank) as $before
         | ($change.after.plan | rank) as $after
