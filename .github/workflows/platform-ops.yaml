@@ -404,6 +404,8 @@ jobs:
         VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_initialize-agent-proxy-credentials.sh matrix
+
+    - name: Build Deploy Matrix
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
       working-directory: ${{ env.ENV_DIR }}
       run: |-
