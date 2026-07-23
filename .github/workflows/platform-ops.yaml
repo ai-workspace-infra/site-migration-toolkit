@@ -184,7 +184,7 @@ env:
 jobs:
   resize:
     name: Replace VPS for a guarded downgrade
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'resize' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'resize' && inputs.resize_instance_id != '' }}
     uses: ./.github/workflows/resize-instance.yaml
     with:
       vault_env_path: ${{ inputs.vault_env_path }}
@@ -204,30 +204,43 @@ jobs:
     needs: resize
     if: ${{ always() && (needs.resize.result == 'success' || needs.resize.result == 'skipped') }}
     runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
+    # Static job-level env: inputs known at job start (no step output refs allowed here)
+    env:
+      INPUT_VAULT_ENV_PATH:        ${{ github.event.inputs.vault_env_path }}
+      INPUT_TARGET_DOMAINS:        ${{ github.event.inputs.target_domains }}
+      INPUT_RUN_PROVISION_AND_DEPLOY: ${{ github.event.inputs.run_provision_and_deploy }}
+      INPUT_ACTION:                ${{ github.event.inputs.action }}
+      INPUT_INFRA_REF:             ${{ github.event.inputs.infra_ref }}
+      INPUT_CONSOLE_REF:           ${{ github.event.inputs.console_ref }}
+      INPUT_OFFLINE_MODE:          ${{ github.event.inputs.offline_mode }}
+      INPUT_SOURCE_HOST:           ${{ github.event.inputs.source_host }}
+      INPUT_SOURCE_DOMAIN_BASE:    ${{ github.event.inputs.source_domain_base }}
+      INPUT_TARGET_DOMAIN_BASE:    ${{ github.event.inputs.target_domain_base }}
+      INPUT_CONFIRM_DNS_SWITCH:    ${{ github.event.inputs.confirm_dns_switch }}
     outputs:
-      deployment_env: ${{ steps.route.outputs.deployment_env }}
-      resource_file: ${{ steps.route.outputs.resource_file }}
-      terraform_workspace: ${{ steps.route.outputs.terraform_workspace }}
-      state_key: ${{ steps.route.outputs.state_key }}
+      deployment_env:           ${{ steps.route.outputs.deployment_env }}
+      resource_file:            ${{ steps.route.outputs.resource_file }}
+      terraform_workspace:      ${{ steps.route.outputs.terraform_workspace }}
+      state_key:                ${{ steps.route.outputs.state_key }}
       run_provision_and_deploy: ${{ steps.route.outputs.run_provision_and_deploy }}
-      target_domains: ${{ steps.route.outputs.target_domains }}
-      terraform_action: ${{ steps.route.outputs.terraform_action }}
-      toolkit_action: ${{ steps.route.outputs.toolkit_action }}
-      infra_ref: ${{ steps.route.outputs.infra_ref }}
-      console_ref: ${{ steps.route.outputs.console_ref }}
-      offline_mode: ${{ steps.route.outputs.offline_mode }}
-      source_host: ${{ steps.route.outputs.source_host }}
-      source_domain_base: ${{ steps.route.outputs.source_domain_base }}
-      target_domain_base: ${{ steps.route.outputs.target_domain_base }}
-      env_suffix: ${{ steps.route.outputs.env_suffix }}
-      confirm_dns_switch: ${{ steps.route.outputs.confirm_dns_switch }}
-      vault_env_path: ${{ steps.route.outputs.vault_env_path }}
-      hosts: ${{ steps.matrix.outputs.hosts || '[]' }}
-      hosts_web_saas: ${{ steps.matrix.outputs.hosts_web_saas || '[]' }}
+      target_domains:           ${{ steps.route.outputs.target_domains }}
+      terraform_action:         ${{ steps.route.outputs.terraform_action }}
+      toolkit_action:           ${{ steps.route.outputs.toolkit_action }}
+      infra_ref:                ${{ steps.route.outputs.infra_ref }}
+      console_ref:              ${{ steps.route.outputs.console_ref }}
+      offline_mode:             ${{ steps.route.outputs.offline_mode }}
+      source_host:              ${{ steps.route.outputs.source_host }}
+      source_domain_base:       ${{ steps.route.outputs.source_domain_base }}
+      target_domain_base:       ${{ steps.route.outputs.target_domain_base }}
+      env_suffix:               ${{ steps.route.outputs.env_suffix }}
+      confirm_dns_switch:       ${{ steps.route.outputs.confirm_dns_switch }}
+      vault_env_path:           ${{ steps.route.outputs.vault_env_path }}
+      hosts:              ${{ steps.matrix.outputs.hosts         || '[]' }}
+      hosts_web_saas:     ${{ steps.matrix.outputs.hosts_web_saas     || '[]' }}
       hosts_ai_workspace: ${{ steps.matrix.outputs.hosts_ai_workspace || '[]' }}
       hosts_infra_platform: ${{ steps.matrix.outputs.hosts_infra_platform || '[]' }}
-      hosts_agent_proxy: ${{ steps.matrix.outputs.hosts_agent_proxy || '[]' }}
-      count: ${{ steps.matrix.outputs.count || '0' }}
+      hosts_agent_proxy:  ${{ steps.matrix.outputs.hosts_agent_proxy  || '[]' }}
+      count:              ${{ steps.matrix.outputs.count || '0' }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
@@ -242,25 +255,12 @@ jobs:
       # 这正是本仓这几天一直在消灭的那类"看起来选对了、实际部署到别的目标"。
       if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.cloud_provider != 'vultr-vps' }}
       run: |
-        echo "::error::cloud_provider='${{ github.event.inputs.cloud_provider }}' is not implemented in this workflow yet. Only 'vultr-vps' has resource declarations, credentials, and a wired Terraform module for the four business domains here. Choose vultr-vps, or wire up the other providers before selecting them." >&2
+        echo "::error::cloud_provider='${{ github.event.inputs.cloud_provider }}' is not implemented. Only 'vultr-vps' has resource declarations, credentials, and a wired Terraform module." >&2
         exit 1
 
     - name: Route ref to an explicit profile
       id: route
-      env:
-        GITHUB_EVENT_NAME: ${{ github.event_name }}
-        GITHUB_REF: ${{ github.ref }}
-        INPUT_VAULT_ENV_PATH: ${{ github.event.inputs.vault_env_path }}
-        INPUT_TARGET_DOMAINS: ${{ github.event.inputs.target_domains }}
-        INPUT_RUN_PROVISION_AND_DEPLOY: ${{ github.event.inputs.run_provision_and_deploy }}
-        INPUT_ACTION: ${{ github.event.inputs.action }}
-        INPUT_INFRA_REF: ${{ github.event.inputs.infra_ref }}
-        INPUT_CONSOLE_REF: ${{ github.event.inputs.console_ref }}
-        INPUT_OFFLINE_MODE: ${{ github.event.inputs.offline_mode }}
-        INPUT_SOURCE_HOST: ${{ github.event.inputs.source_host }}
-        INPUT_SOURCE_DOMAIN_BASE: ${{ github.event.inputs.source_domain_base }}
-        INPUT_TARGET_DOMAIN_BASE: ${{ github.event.inputs.target_domain_base }}
-        INPUT_CONFIRM_DNS_SWITCH: ${{ github.event.inputs.confirm_dns_switch }}
+      # env block inherited from job level — no repetition needed here
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_route-ref-to-an-explicit-profile.sh
 
@@ -276,12 +276,24 @@ jobs:
         ignoreNotFound: true
         exportToken: true
         secrets: |
-          ${{ env.VAULT_KV_BASE }} VULTR_API_KEY | VULTR_API_KEY ;
+          ${{ env.VAULT_KV_BASE }} VULTR_API_KEY     | VULTR_API_KEY ;
           ${{ env.VAULT_KV_BASE }} TF_STATE_ENDPOINT | TF_STATE_ENDPOINT ;
-          ${{ env.VAULT_KV_BASE }} TF_STATE_BUCKET | TF_STATE_BUCKET ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_BUCKET   | TF_STATE_BUCKET ;
           ${{ env.VAULT_KV_BASE }} TF_STATE_ACCESS_KEY | TF_STATE_ACCESS_KEY ;
           ${{ env.VAULT_KV_BASE }} TF_STATE_SECRET_KEY | TF_STATE_SECRET_KEY ;
-          ${{ env.VAULT_KV_BASE }} TF_STATE_REGION | TF_STATE_REGION
+          ${{ env.VAULT_KV_BASE }} TF_STATE_REGION   | TF_STATE_REGION
+
+    # Export Vault-sourced credentials into GITHUB_ENV so all subsequent steps
+    # inherit them automatically — eliminates per-step env repetition.
+    - name: Export Terraform credentials
+      if: steps.route.outputs.run_provision_and_deploy == 'true'
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}"   >> "$GITHUB_ENV"
+        echo "AWS_SECRET_ACCESS_KEY=${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}" >> "$GITHUB_ENV"
+        echo "TF_VAR_vultr_api_key=${{ steps.vault.outputs.VULTR_API_KEY }}"      >> "$GITHUB_ENV"
+        echo "TF_STATE_ENDPOINT=${{ steps.vault.outputs.TF_STATE_ENDPOINT }}"     >> "$GITHUB_ENV"
+        echo "TF_STATE_BUCKET=${{ steps.vault.outputs.TF_STATE_BUCKET }}"         >> "$GITHUB_ENV"
+        echo "TF_STATE_REGION=${{ steps.vault.outputs.TF_STATE_REGION }}"         >> "$GITHUB_ENV"
 
     - name: Checkout iac_modules
       if: steps.route.outputs.run_provision_and_deploy == 'true'
@@ -309,8 +321,8 @@ jobs:
       if: steps.route.outputs.run_provision_and_deploy == 'true'
       id: plan
       env:
-        INPUT_DOMAIN_____ALL_: ${{ github.event.inputs.target_domains || 'all' }}
-        INPUT_INSTANCE_PLAN_____4C8G_: ${{ github.event.inputs.instance_plan || '4C8G' }}
+        INPUT_DOMAIN_____ALL_:         ${{ github.event.inputs.target_domains || 'all' }}
+        INPUT_INSTANCE_PLAN_____4C8G_: ${{ github.event.inputs.instance_plan  || '4C8G' }}
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_map-instance-plan.sh
 
@@ -318,12 +330,11 @@ jobs:
       if: steps.route.outputs.run_provision_and_deploy == 'true'
       working-directory: ${{ env.VPS_ROOT }}
       env:
-        TARGET_DOMAIN: ${{ steps.route.outputs.target_domains }}
-        INSTANCE_PLAN_API: ${{ steps.plan.outputs.api }}
-        TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
-        TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+        TARGET_DOMAIN:      ${{ steps.route.outputs.target_domains }}
+        INSTANCE_PLAN_API:  ${{ steps.plan.outputs.api }}
         TF_WORKSPACE_PREFIX: env
         TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
+        # TF_STATE_* and AWS_* already in env via "Export Terraform credentials"
       run: python3 scripts/generate.py render --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
     - name: Terraform init
@@ -331,11 +342,7 @@ jobs:
       working-directory: ${{ env.ENV_DIR }}
       env:
         ENV_STEPS_ROUTE_OUTPUTS_STATE_KEY: ${{ steps.route.outputs.state_key }}
-        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
-        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-        TF_STATE_ENDPOINT: ${{ steps.vault.outputs.TF_STATE_ENDPOINT }}
-        TF_STATE_BUCKET: ${{ steps.vault.outputs.TF_STATE_BUCKET }}
-        TF_STATE_REGION: ${{ steps.vault.outputs.TF_STATE_REGION }}
+        # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / TF_STATE_* from GITHUB_ENV
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_terraform-init.sh
 
@@ -344,11 +351,9 @@ jobs:
       working-directory: ${{ env.ENV_DIR }}
       env:
         ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_WORKSPACE: ${{ steps.route.outputs.terraform_workspace }}
-        SOURCE_INSTANCE_ID: ${{ inputs.resize_instance_id }}
+        SOURCE_INSTANCE_ID:      ${{ inputs.resize_instance_id }}
         REPLACEMENT_INSTANCE_ID: ${{ needs.resize.outputs.replacement_id }}
-        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
-        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-        TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
+        # AWS_* / TF_VAR_vultr_api_key from GITHUB_ENV
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_adopt-resize-replacement.sh
 
@@ -356,11 +361,9 @@ jobs:
       if: steps.route.outputs.run_provision_and_deploy == 'true'
       working-directory: ${{ env.ENV_DIR }}
       env:
-        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
-        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
-        TF_VAR_vultr_api_key: ${{ steps.vault.outputs.VULTR_API_KEY }}
-        ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_ACTION: ${{ steps.route.outputs.terraform_action }}
+        ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_ACTION:    ${{ steps.route.outputs.terraform_action }}
         ENV_STEPS_ROUTE_OUTPUTS_TERRAFORM_WORKSPACE: ${{ steps.route.outputs.terraform_workspace }}
+        # AWS_* / TF_VAR_vultr_api_key from GITHUB_ENV
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_provision_terraform-apply-destroy.sh
 
@@ -368,13 +371,39 @@ jobs:
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
       working-directory: ${{ env.VPS_ROOT }}
       env:
-        AWS_ACCESS_KEY_ID: ${{ steps.vault.outputs.TF_STATE_ACCESS_KEY }}
-        AWS_SECRET_ACCESS_KEY: ${{ steps.vault.outputs.TF_STATE_SECRET_KEY }}
         TARGET_DOMAIN_BASE: ${{ steps.route.outputs.target_domain_base }}
+        # AWS_* from GITHUB_ENV
       run: python3 scripts/generate.py inventory --resources config/resources/${{ steps.route.outputs.resource_file }}.yaml --workdir envs/platform-ops-toolkit
 
     - name: Build deploy matrix
       id: matrix
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      working-directory: ${{ env.ENV_DIR }}
+      run: |-
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_build-deploy-matrix.sh
+
+    - name: Upload CMDB artifact
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      uses: actions/upload-artifact@v7
+      with:
+        name: platform-ops-toolkit-cmdb
+        path: |
+          ${{ env.ENV_DIR }}/cmdb.json
+          ${{ env.ENV_DIR }}/inventory.ini
+
+    - name: Initialize Databases Credentials
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      env:
+        VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
+      run: |-
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_initialize-databases-credentials.sh
+
+    - name: Initialize Agent Proxy Credentials
+      if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
+      env:
+        VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
+      run: |-
+        ${{ github.workspace }}/.github/scripts/platform-ops_provision_initialize-agent-proxy-credentials.sh matrix
       if: steps.route.outputs.run_provision_and_deploy == 'true' && steps.route.outputs.terraform_action == 'apply'
       working-directory: ${{ env.ENV_DIR }}
       run: |-
@@ -416,6 +445,10 @@ jobs:
       fail-fast: false
       matrix:
         host: ${{ fromJSON(needs.provision.outputs.hosts) }}
+    env:
+      MATRIX_HOST:              ${{ matrix.host }}
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      ANSIBLE_SSH_ARGS:         "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
@@ -455,8 +488,6 @@ jobs:
         ${{ github.workspace }}/.github/scripts/common_configure_ssh_key.sh
 
     - name: Wait for host SSH
-      env:
-        MATRIX_HOST: ${{ matrix.host }}
       run: |-
         ${{ github.workspace }}/.github/scripts/common_wait_for_host_ssh.sh
 
@@ -466,11 +497,8 @@ jobs:
     - name: Bootstrap node according to CMDB role
       working-directory: playbooks
       env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        VAULT_ADDR: ${{ env.VAULT_ADDR }}
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        MATRIX_HOST: ${{ matrix.host }}
+        # MATRIX_HOST / ANSIBLE_HOST_KEY_CHECKING / ANSIBLE_SSH_ARGS from job env
       run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_bootstrap-node.sh
 
 
@@ -545,6 +573,9 @@ jobs:
     needs: [provision, deploy_base, deploy_web_saas, deploy_infra_platform, deploy_agent_proxy]
     if: ${{ always() && (needs.deploy_base.result == 'success' || needs.deploy_base.result == 'skipped') && (needs.deploy_web_saas.result == 'success' || needs.deploy_web_saas.result == 'skipped') && (needs.deploy_infra_platform.result == 'success' || needs.deploy_infra_platform.result == 'skipped') && (needs.deploy_agent_proxy.result == 'success' || needs.deploy_agent_proxy.result == 'skipped') && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.toolkit_action != 'deploy' }}
     runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "False"
+      ANSIBLE_SSH_ARGS:         "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
     steps:
     - name: Download CMDB
         # 只在 provision 运行的情况下下载
@@ -580,27 +611,29 @@ jobs:
         ignoreNotFound: true
         secrets: |
           ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-          ${{ env.VAULT_KV_BASE }} TF_STATE_BUCKET | MIGRATION_S3_BUCKET ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_BUCKET     | MIGRATION_S3_BUCKET ;
           ${{ env.VAULT_KV_BASE }} TF_STATE_ACCESS_KEY | MIGRATION_S3_ACCESS_KEY ;
           ${{ env.VAULT_KV_BASE }} TF_STATE_SECRET_KEY | MIGRATION_S3_SECRET_KEY ;
-          ${{ env.VAULT_KV_BASE }} TF_STATE_REGION | MIGRATION_S3_REGION ;
-          ${{ env.VAULT_KV_BASE }} TF_STATE_ENDPOINT | MIGRATION_S3_ENDPOINT ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_REGION     | MIGRATION_S3_REGION ;
+          ${{ env.VAULT_KV_BASE }} TF_STATE_ENDPOINT   | MIGRATION_S3_ENDPOINT ;
 
     - name: Configure SSH Key
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_data_migration_configure-ssh-key.sh
 
+    # Export Vault-sourced migration credentials into GITHUB_ENV for the run step.
+    - name: Export migration credentials
+      run: |
+        echo "VAULT_TOKEN=${{ steps.vault.outputs.vault_token }}"                       >> "$GITHUB_ENV"
+        echo "MIGRATION_S3_BUCKET=${{ steps.vault.outputs.MIGRATION_S3_BUCKET }}"       >> "$GITHUB_ENV"
+        echo "MIGRATION_S3_ACCESS_KEY=${{ steps.vault.outputs.MIGRATION_S3_ACCESS_KEY }}" >> "$GITHUB_ENV"
+        echo "MIGRATION_S3_SECRET_KEY=${{ steps.vault.outputs.MIGRATION_S3_SECRET_KEY }}" >> "$GITHUB_ENV"
+        echo "MIGRATION_S3_REGION=${{ steps.vault.outputs.MIGRATION_S3_REGION }}"       >> "$GITHUB_ENV"
+        echo "MIGRATION_S3_ENDPOINT=${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}"   >> "$GITHUB_ENV"
+
     - name: Run Toolkit Action (${{ needs.provision.outputs.toolkit_action }})
       working-directory: platform-ops-toolkit
-      env:
-        ANSIBLE_HOST_KEY_CHECKING: "False"
-        VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        ANSIBLE_SSH_ARGS: "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
-        MIGRATION_S3_BUCKET: ${{ steps.vault.outputs.MIGRATION_S3_BUCKET }}
-        MIGRATION_S3_ACCESS_KEY: ${{ steps.vault.outputs.MIGRATION_S3_ACCESS_KEY }}
-        MIGRATION_S3_SECRET_KEY: ${{ steps.vault.outputs.MIGRATION_S3_SECRET_KEY }}
-        MIGRATION_S3_REGION: ${{ steps.vault.outputs.MIGRATION_S3_REGION }}
-        MIGRATION_S3_ENDPOINT: ${{ steps.vault.outputs.MIGRATION_S3_ENDPOINT }}
+      # All credentials (VAULT_TOKEN, MIGRATION_S3_*, ANSIBLE_*) from job env / GITHUB_ENV
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_data_migration_run-toolkit-action-needs-provision-outputs-toolkit-action.sh
 
@@ -619,6 +652,10 @@ jobs:
       (needs.data_migration.result == 'success' || needs.data_migration.result == 'skipped')
     runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     environment: production
+    env:
+      PROVISION_TARGET_DOMAIN_BASE:  ${{ needs.provision.outputs.target_domain_base }}
+      PROVISION_SOURCE_DOMAIN_BASE:  ${{ needs.provision.outputs.source_domain_base }}
+      INPUT_RUN_PROVISION_AND_DEPLOY: ${{ github.event.inputs.run_provision_and_deploy }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
@@ -658,8 +695,6 @@ jobs:
     - name: Switch Cloudflare DNS Records
       env:
         CLOUDFLARE_DNS_API_TOKEN: ${{ steps.vault.outputs.CLOUDFLARE_DNS_API_TOKEN }}
-        PROVISION_TARGET_DOMAIN_BASE: ${{ needs.provision.outputs.target_domain_base }}
-        PROVISION_SOURCE_DOMAIN_BASE: ${{ needs.provision.outputs.source_domain_base }}
-        INPUT_RUN_PROVISION_AND_DEPLOY: ${{ github.event.inputs.run_provision_and_deploy }}
+        # PROVISION_TARGET_DOMAIN_BASE / PROVISION_SOURCE_DOMAIN_BASE / INPUT_RUN_PROVISION_AND_DEPLOY from job env
       run: |-
         ${{ github.workspace }}/.github/scripts/platform-ops_switch_dns_switch-cloudflare-dns-records.sh
