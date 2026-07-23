@@ -438,8 +438,13 @@ jobs:
     name: Bootstrap Node on ${{ matrix.host }}
     # 只初始化节点；服务安装由后续 deploy_* jobs 负责。
     needs: provision
+    # always() 是必须的: resize 被跳过时 provision 靠 always() 才运行,
+    # 该 skip 会沿 needs 链继续传递, 因此下游每个 job 都要显式接住,
+    # 并自行断言上游 result == 'success'。
     if: >-
-      ${{ needs.provision.outputs.run_application_deploy == 'true' &&
+      ${{ always() &&
+      needs.provision.result == 'success' &&
+      needs.provision.outputs.run_application_deploy == 'true' &&
       needs.provision.outputs.terraform_action == 'apply' &&
       needs.provision.outputs.count != '0' &&
       needs.provision.outputs.hosts != '[]' &&
