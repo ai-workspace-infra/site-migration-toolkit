@@ -492,7 +492,6 @@ jobs:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
     needs: provision
     if: ${{ needs.provision.outputs.run_provision_and_deploy == 'true' && needs.provision.outputs.terraform_action == 'apply' && needs.provision.outputs.count != '0' && (needs.provision.outputs.target_domains == 'all' || needs.provision.outputs.target_domains == 'web-saas') && needs.provision.outputs.hosts_web_saas != '[]' && needs.provision.outputs.hosts_web_saas != '' }}
-    runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
