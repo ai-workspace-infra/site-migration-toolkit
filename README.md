@@ -28,19 +28,6 @@ This toolkit is divided into four core domains based on the actual business topo
 
 For detailed migration, backup, and restoration strategies for each domain, please refer to the `README.md` documents within their respective sub-directories.
 
-## 🚀 Orchestration and Usage
-
-*Note: The orchestration layer is currently transitioning from legacy monolithic Python scripts to a modular Ansible / Make supported architecture.*
-
-You can perform on-demand backups or migrations by specifying one or more `DOMAIN`s using the global entry commands:
-
-```bash
-# Example: Data backup exclusively for the AI workspace and open platform domains
-make backup DOMAIN=ai-workspace,open-platform
-
-# Example: One-click trigger for a full-site migration and recovery pipeline across all domains
-make migrate DOMAIN=all
-```
 
 ## 🛠️ CI/CD and IaC Pipelines
 
