@@ -231,6 +231,14 @@ EOF
 }
 
 # $1 = environment suffix, $2 = policy name, $3 = ref claim JSON value
+#
+# 这些 role 是给 platform-ops.yaml 跨仓 `uses:` 调用 playbooks 的域 CD 用的。
+# OIDC 的 repository claim 是 **运行所属的仓库**, 也就是调用方
+# platform-ops-toolkit —— 不是被调用的 workflow 所在的 playbooks。绑成
+# playbooks 会永远匹配不上, 认证直接失败。被调用方的身份要靠
+# job_workflow_ref 钉, GitHub 引入这个 claim 正是为了可复用 workflow。
+# 两者合起来才是想要的边界: "一次由 platform-ops-toolkit 拥有的 run,
+# 正在执行 playbooks 的域 CD workflow"。
 write_playbooks_role() {
   local suffix="$1" policy="$2" ref_claim="$3"
   vault write "auth/jwt/role/github-actions-playbooks-${suffix}" - <<EOF
@@ -240,7 +248,7 @@ write_playbooks_role() {
   "bound_audiences": ["vault"],
   "bound_claims_type": "glob",
   "bound_claims": {
-    "repository": "${PLAYBOOKS_REPO}",
+    "repository": "${REPO}",
     "job_workflow_ref": [
 ${PLAYBOOKS_ALLOWED_WORKFLOWS}
     ],
