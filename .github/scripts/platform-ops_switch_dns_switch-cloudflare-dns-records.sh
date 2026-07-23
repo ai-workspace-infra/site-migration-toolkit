@@ -1,5 +1,5 @@
 #!/bin/bash
-if [ "${INPUT_RUN_PROVISION_AND_DEPLOY}" = "true" ]; then
+if [ "${INPUT_RUN_INFRASTRUCTURE}" = "true" ]; then
   INVENTORY_PATH="../cmdb/inventory.ini"
 else
   INVENTORY_PATH="../platform-ops-toolkit/inventory.ini"
@@ -13,7 +13,7 @@ cd playbooks
 #     一个都匹配不上, 结果一条主机 A 记录都不会生成。
 #   * 走仓库内静态 inventory 时保持默认, 那份 inventory 是全量生产清单, 只应发布
 #     那四类主机。
-if [ "${INPUT_RUN_PROVISION_AND_DEPLOY}" = "true" ]; then
+if [ "${INPUT_RUN_INFRASTRUCTURE}" = "true" ]; then
   SOURCE_HOSTS_ARG=(-e '{"cloudflare_dns_source_hosts": ["all"]}')
 else
   SOURCE_HOSTS_ARG=()
