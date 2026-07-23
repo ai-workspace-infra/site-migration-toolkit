@@ -10,11 +10,13 @@ be caught by an assertion instead of by review.
   C2  skip propagating past an always() job into a downstream job without one
   C3  always() without a result assertion on each upstream
   C4  needs.<x> referenced in an `if:` but not declared in needs:
+  C5  a script invoked bare from `run:` without the exec bit set in git
 
 Exit 0 = all pass. Non-zero = at least one violation, listed on stderr.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -23,21 +25,103 @@ try:
 except ImportError:
     sys.exit("PyYAML is required: pip install pyyaml")
 
-WORKFLOW_DIR = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 
 violations = []
+
+
+def git_file_modes():
+    """Map repo-relative path -> git mode. The mode in the index is what the
+    runner checks out; a local chmod that was never staged does not travel."""
+    out = subprocess.run(
+        ["git", "ls-files", "-s"], cwd=REPO_ROOT,
+        capture_output=True, text=True, check=True).stdout
+    modes = {}
+    for line in out.splitlines():
+        meta, _, path = line.partition("\t")
+        modes[path] = meta.split()[0]
+    return modes
+
+
+# A bare invocation is a script path in *command* position. `bash x.sh` runs
+# fine without the exec bit, so only the leading token of each command segment
+# is interesting -- which is easier to get right by splitting than by one regex.
+EXPR = re.compile(r"\$\{\{[^}]*\}\}")
+SEGMENT = re.compile(r"[\n;]|&&|\|\||\|")
+INTERPRETERS = {"bash", "sh", "zsh", "source", ".", "exec",
+                "python", "python3", "env", "sudo"}
+
+
+def script_ref(token):
+    """Repo-relative path if the token names a script in this repo, else None."""
+    token = token.strip("\"'")
+    for marker in (".github/scripts/", "scripts/"):
+        i = token.find(marker)
+        if i != -1:
+            return token[i:]
+    return None
+
+
+def bare_invocations(block):
+    block = EXPR.sub("EXPR", block)          # ${{ x }} holds spaces; collapse it
+    for segment in SEGMENT.split(block):
+        tokens = segment.split()
+        if not tokens:
+            continue
+        head = tokens[0]
+        if head in INTERPRETERS or head.startswith("-") or "=" in head:
+            continue
+        if not head.endswith((".sh", ".py")):
+            continue
+        rel = script_ref(head)
+        if rel:
+            yield rel
+
+
+def iter_run_blocks(node):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "run" and isinstance(v, str):
+                yield v
+            else:
+                yield from iter_run_blocks(v)
+    elif isinstance(node, list):
+        for item in node:
+            yield from iter_run_blocks(item)
 
 
 def report(wf, job, check, msg):
     violations.append(f"{wf}: job `{job}`: [{check}] {msg}")
 
 
-def check_workflow(path):
+def check_workflow(path, modes):
     doc = yaml.safe_load(path.read_text())
     if not isinstance(doc, dict):
         return
     jobs = doc.get("jobs") or {}
     wf = path.name
+
+    # C5 -- a bare-invoked script without the exec bit dies with exit 126
+    # "Permission denied" before emitting a single line, so the log shows the
+    # step's env block and nothing else. This is only reachable once the step
+    # actually runs: two such scripts sat in deploy_base for as long as that
+    # job was being skipped (#90, #93).
+    seen = set()
+    for block in iter_run_blocks(doc):
+        for rel in bare_invocations(block):
+            if rel in seen:
+                continue
+            seen.add(rel)
+            mode = modes.get(rel)
+            if mode is None:
+                violations.append(
+                    f"{wf}: [C5] `run:` invokes {rel}, which is not tracked in git")
+            elif not mode.endswith("755"):
+                violations.append(
+                    f"{wf}: [C5] `run:` invokes {rel} bare, but its git mode is "
+                    f"{mode} -- the step will exit 126 Permission denied "
+                    f"(fix: git update-index --chmod=+x {rel})")
 
     for name, cfg in jobs.items():
         if not isinstance(cfg, dict):
@@ -106,8 +190,9 @@ def main():
     if not paths:
         sys.exit(f"no workflows found under {WORKFLOW_DIR}")
 
+    modes = git_file_modes()
     for path in paths:
-        check_workflow(path)
+        check_workflow(path, modes)
 
     if violations:
         print(f"FAIL: {len(violations)} gating violation(s)", file=sys.stderr)
