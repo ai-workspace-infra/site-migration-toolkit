@@ -34,10 +34,10 @@ if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
   state_key="platform-ops-toolkit/${deployment_env}/${rf}.tfstate"
   # 执行边界拆成两段独立开关, 不再由一个参数同时代表"建基础设施"和"部署业务":
   #   run_infrastructure -> Terraform render/init/apply|destroy + CMDB/matrix
-  #   run_domain_deploy  -> Bootstrap Node + 四个业务域部署
+  #   run_application_deploy  -> Bootstrap Node + 四个业务域部署
   # 两者默认都是 false, 手动触发必须显式选择要做什么。
   run_infrastructure="${INPUT_RUN_INFRASTRUCTURE:-false}"
-  run_domain_deploy="${INPUT_RUN_DOMAIN_DEPLOY:-false}"
+  run_application_deploy="${INPUT_RUN_APPLICATION_DEPLOY:-false}"
 
   # 一键整套初始化: 申请 IaC 资源 -> 部署业务应用 -> 发布 DNS。
   # 它不是第三种模式, 只是把上面两个开关和 DNS 发布一起打开, 这样"整套拉起
@@ -45,14 +45,14 @@ if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
   # 显式覆盖而非 || 兜底: 勾了它就是要整套, 不该被同时传入的 false 悄悄削弱。
   if [ "${INPUT_RUN_FULL_STACK:-false}" = "true" ]; then
     run_infrastructure=true
-    run_domain_deploy=true
+    run_application_deploy=true
     confirm_dns_switch_override=true
   fi
 
   # 非法组合必须显式失败, 不能静默跳过: 部署所用的 inventory (CMDB) 是在
   # provision 阶段生成的, 跳过基础设施阶段就没有 inventory 可用。
-  if [ "${run_infrastructure}" != "true" ] && [ "${run_domain_deploy}" = "true" ]; then
-    echo "::error::run_domain_deploy=true requires run_infrastructure=true because the current deployment inventory is generated during provisioning." >&2
+  if [ "${run_infrastructure}" != "true" ] && [ "${run_application_deploy}" = "true" ]; then
+    echo "::error::run_application_deploy=true requires run_infrastructure=true because the current deployment inventory is generated during provisioning." >&2
     exit 1
   fi
 
@@ -90,7 +90,7 @@ else
     # PR 只做 terraform plan, 不 apply。四个 deploy job 都要求
     # terraform_action == 'apply', 所以 plan 会让它们全部 skip ——
     # PR 仍然校验 terraform 配置, 但不再创建真实 VPS。
-    run_infrastructure=true; run_domain_deploy=false
+    run_infrastructure=true; run_application_deploy=false
     terraform_action=plan; toolkit_action=none; infra_ref=main; console_ref=main; offline_mode=off
     source_host="${SOURCE_HOST_DEFAULT}"; source_domain_base="${SOURCE_DOMAIN_BASE_DEFAULT}"; target_domain_base="${TARGET_DOMAIN_BASE_DEFAULT}"; env_suffix=-sit; confirm_dns_switch=false
   else
@@ -98,21 +98,21 @@ else
       refs/heads/main|refs/heads/release/*)
         deployment_env=uat; resource_file=uat/web-saas; terraform_workspace=web-saas-uat
         state_key=platform-ops-toolkit/uat/web-saas.tfstate; target_domains=web-saas
-        run_infrastructure=true; run_domain_deploy=true
+        run_infrastructure=true; run_application_deploy=true
         terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
         source_host="${SOURCE_HOST_DEFAULT}"; source_domain_base="${SOURCE_DOMAIN_BASE_DEFAULT}"; target_domain_base="${TARGET_DOMAIN_BASE_DEFAULT}"; env_suffix=-uat; confirm_dns_switch=false
         ;;
       refs/tags/v*)
         deployment_env=prod; resource_file=prod/web-saas; terraform_workspace=web-saas-prod
         state_key=platform-ops-toolkit/prod/web-saas.tfstate; target_domains=web-saas
-        run_infrastructure=true; run_domain_deploy=true
+        run_infrastructure=true; run_application_deploy=true
         terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
         source_host="${SOURCE_HOST_DEFAULT}"; source_domain_base="${SOURCE_DOMAIN_BASE_DEFAULT}"; target_domain_base="${TARGET_DOMAIN_BASE_DEFAULT}"; env_suffix=""; confirm_dns_switch=false
         ;;
       *)
         deployment_env=sit; resource_file=sit/all-in-one; terraform_workspace=all-in-one-sit
         state_key=platform-ops-toolkit/sit/all-in-one.tfstate; target_domains=all
-        run_infrastructure=true; run_domain_deploy=true
+        run_infrastructure=true; run_application_deploy=true
         terraform_action=apply; toolkit_action=deploy; infra_ref=main; console_ref=main; offline_mode=off
         source_host="${SOURCE_HOST_DEFAULT}"; source_domain_base="${SOURCE_DOMAIN_BASE_DEFAULT}"; target_domain_base="${TARGET_DOMAIN_BASE_DEFAULT}"; env_suffix=-sit; confirm_dns_switch=false
         ;;
@@ -122,13 +122,11 @@ fi
 # 所有触发路径都必须给这两个开关显式赋值 —— 空串会让下游 == 'true' 比较
 # 静默为假, 表现成"没被请求", 与"结构上跑不起来"无法区分。
 : "${run_infrastructure:?route: run_infrastructure was never assigned on this trigger path}"
-: "${run_domain_deploy:?route: run_domain_deploy was never assigned on this trigger path}"
+: "${run_application_deploy:?route: run_application_deploy was never assigned on this trigger path}"
 
-for key in deployment_env resource_file terraform_workspace state_key run_infrastructure run_domain_deploy target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch; do
+for key in deployment_env resource_file terraform_workspace state_key run_infrastructure run_application_deploy target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch; do
   value="${!key:-}"
   echo "$key=$value" >> "$GITHUB_OUTPUT"
 done
 
-# 兼容别名: 旧名只代表"基础设施阶段", 不再隐含业务部署。
-echo "run_provision_and_deploy=${run_infrastructure}" >> "$GITHUB_OUTPUT"
 echo "vault_env_path=${deployment_env}" >> "$GITHUB_OUTPUT"

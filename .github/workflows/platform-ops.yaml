@@ -77,8 +77,8 @@ on:
         required: false
         default: false
         type: boolean
-      run_domain_deploy:
-        description: "Terraform Apply 之后是否执行 Bootstrap Node 与业务域服务部署。必须同时 run_infrastructure=true, 因为部署所用的 inventory 由 provision 阶段生成"
+      run_application_deploy:
+        description: "Terraform Apply 之后是否执行 Bootstrap Node 与各业务域的全部应用服务部署。必须同时 run_infrastructure=true, 因为部署所用的 inventory 由 provision 阶段生成"
         required: false
         default: false
         type: boolean
@@ -220,7 +220,7 @@ jobs:
       INPUT_TARGET_DOMAINS:        ${{ github.event.inputs.target_domains }}
       INPUT_RUN_FULL_STACK:        ${{ github.event.inputs.run_full_stack }}
       INPUT_RUN_INFRASTRUCTURE:    ${{ github.event.inputs.run_infrastructure }}
-      INPUT_RUN_DOMAIN_DEPLOY:     ${{ github.event.inputs.run_domain_deploy }}
+      INPUT_RUN_APPLICATION_DEPLOY:     ${{ github.event.inputs.run_application_deploy }}
       INPUT_ACTION:                ${{ github.event.inputs.action }}
       INPUT_INFRA_REF:             ${{ github.event.inputs.infra_ref }}
       INPUT_CONSOLE_REF:           ${{ github.event.inputs.console_ref }}
@@ -234,9 +234,8 @@ jobs:
       resource_file:            ${{ steps.route.outputs.resource_file }}
       terraform_workspace:      ${{ steps.route.outputs.terraform_workspace }}
       state_key:                ${{ steps.route.outputs.state_key }}
-      run_provision_and_deploy: ${{ steps.route.outputs.run_provision_and_deploy }}
       run_infrastructure:       ${{ steps.route.outputs.run_infrastructure }}
-      run_domain_deploy:        ${{ steps.route.outputs.run_domain_deploy }}
+      run_application_deploy:        ${{ steps.route.outputs.run_application_deploy }}
       target_domains:           ${{ steps.route.outputs.target_domains }}
       terraform_action:         ${{ steps.route.outputs.terraform_action }}
       toolkit_action:           ${{ steps.route.outputs.toolkit_action }}
@@ -401,8 +400,8 @@ jobs:
       # 随机数据库口令是业务部署的准备工作, 不属于基础设施阶段 —— 只建 VPS
       # 时不该顺手在 Vault 里生成一批没人会用的口令。
       if: >-
-        ${{ steps.route.outputs.run_domain_deploy == 'true' &&
-            steps.route.outputs.terraform_action == 'apply' }}
+        ${{ steps.route.outputs.run_application_deploy == 'true' &&
+        steps.route.outputs.terraform_action == 'apply' }}
       env:
         VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
       run: |-
@@ -412,9 +411,9 @@ jobs:
       # 仅当目标域真的包含 agent-proxy 时才初始化, 避免只建 web-saas 时
       # 无条件写入无关业务域的凭据。
       if: >-
-        ${{ steps.route.outputs.run_domain_deploy == 'true' &&
-            steps.route.outputs.terraform_action == 'apply' &&
-            contains(fromJSON('["all","agent-proxy"]'), steps.route.outputs.target_domains) }}
+        ${{ steps.route.outputs.run_application_deploy == 'true' &&
+        steps.route.outputs.terraform_action == 'apply' &&
+        contains(fromJSON('["all","agent-proxy"]'), steps.route.outputs.target_domains) }}
       env:
         VAULT_ENV_PATH: ${{ steps.route.outputs.vault_env_path }}
       run: |-
@@ -440,13 +439,11 @@ jobs:
     # 只初始化节点；服务安装由后续 deploy_* jobs 负责。
     needs: provision
     if: >-
-      ${{
-        needs.provision.outputs.run_domain_deploy == 'true' &&
-        needs.provision.outputs.terraform_action == 'apply' &&
-        needs.provision.outputs.count != '0' &&
-        needs.provision.outputs.hosts != '[]' &&
-        needs.provision.outputs.hosts != ''
-      }}
+      ${{ needs.provision.outputs.run_application_deploy == 'true' &&
+      needs.provision.outputs.terraform_action == 'apply' &&
+      needs.provision.outputs.count != '0' &&
+      needs.provision.outputs.hosts != '[]' &&
+      needs.provision.outputs.hosts != '' }}
     runs-on: ${{ github.event.inputs.runner_type || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
@@ -527,17 +524,15 @@ jobs:
     name: Deploy Web SaaS Services on ${{ matrix.host }}
     needs: [provision, deploy_base]
     if: >-
-      ${{
-        always() &&
-        needs.provision.result == 'success' &&
-        needs.deploy_base.result == 'success' &&
-        needs.provision.outputs.run_domain_deploy == 'true' &&
-        needs.provision.outputs.terraform_action == 'apply' &&
-        needs.provision.outputs.count != '0' &&
-        (needs.provision.outputs.target_domains == 'all' || needs.provision.outputs.target_domains == 'web-saas') &&
-        needs.provision.outputs.hosts_web_saas != '[]' &&
-        needs.provision.outputs.hosts_web_saas != ''
-      }}
+      ${{ always() &&
+      needs.provision.result == 'success' &&
+      needs.deploy_base.result == 'success' &&
+      needs.provision.outputs.run_application_deploy == 'true' &&
+      needs.provision.outputs.terraform_action == 'apply' &&
+      needs.provision.outputs.count != '0' &&
+      (needs.provision.outputs.target_domains == 'all' || needs.provision.outputs.target_domains == 'web-saas') &&
+      needs.provision.outputs.hosts_web_saas != '[]' &&
+      needs.provision.outputs.hosts_web_saas != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -551,17 +546,15 @@ jobs:
     name: Deploy Open Platform Services on ${{ matrix.host }}
     needs: [provision, deploy_base]
     if: >-
-      ${{
-        always() &&
-        needs.provision.result == 'success' &&
-        needs.deploy_base.result == 'success' &&
-        needs.provision.outputs.run_domain_deploy == 'true' &&
-        needs.provision.outputs.terraform_action == 'apply' &&
-        needs.provision.outputs.count != '0' &&
-        contains(fromJSON('["all","infra-platform"]'), needs.provision.outputs.target_domains) &&
-        needs.provision.outputs.hosts_infra_platform != '[]' &&
-        needs.provision.outputs.hosts_infra_platform != ''
-      }}
+      ${{ always() &&
+      needs.provision.result == 'success' &&
+      needs.deploy_base.result == 'success' &&
+      needs.provision.outputs.run_application_deploy == 'true' &&
+      needs.provision.outputs.terraform_action == 'apply' &&
+      needs.provision.outputs.count != '0' &&
+      contains(fromJSON('["all","infra-platform"]'), needs.provision.outputs.target_domains) &&
+      needs.provision.outputs.hosts_infra_platform != '[]' &&
+      needs.provision.outputs.hosts_infra_platform != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -575,17 +568,15 @@ jobs:
     name: Deploy Agent Proxy Services on ${{ matrix.host }}
     needs: [provision, deploy_base]
     if: >-
-      ${{
-        always() &&
-        needs.provision.result == 'success' &&
-        needs.deploy_base.result == 'success' &&
-        needs.provision.outputs.run_domain_deploy == 'true' &&
-        needs.provision.outputs.terraform_action == 'apply' &&
-        needs.provision.outputs.count != '0' &&
-        contains(fromJSON('["all","agent-proxy"]'), needs.provision.outputs.target_domains) &&
-        needs.provision.outputs.hosts_agent_proxy != '[]' &&
-        needs.provision.outputs.hosts_agent_proxy != ''
-      }}
+      ${{ always() &&
+      needs.provision.result == 'success' &&
+      needs.deploy_base.result == 'success' &&
+      needs.provision.outputs.run_application_deploy == 'true' &&
+      needs.provision.outputs.terraform_action == 'apply' &&
+      needs.provision.outputs.count != '0' &&
+      contains(fromJSON('["all","agent-proxy"]'), needs.provision.outputs.target_domains) &&
+      needs.provision.outputs.hosts_agent_proxy != '[]' &&
+      needs.provision.outputs.hosts_agent_proxy != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -599,17 +590,15 @@ jobs:
     name: Deploy AI Workspace Services on ${{ matrix.host }}
     needs: [provision, deploy_base]
     if: >-
-      ${{
-        always() &&
-        needs.provision.result == 'success' &&
-        needs.deploy_base.result == 'success' &&
-        needs.provision.outputs.run_domain_deploy == 'true' &&
-        needs.provision.outputs.terraform_action == 'apply' &&
-        needs.provision.outputs.count != '0' &&
-        contains(fromJSON('["all","ai-workspace"]'), needs.provision.outputs.target_domains) &&
-        needs.provision.outputs.hosts_ai_workspace != '[]' &&
-        needs.provision.outputs.hosts_ai_workspace != ''
-      }}
+      ${{ always() &&
+      needs.provision.result == 'success' &&
+      needs.deploy_base.result == 'success' &&
+      needs.provision.outputs.run_application_deploy == 'true' &&
+      needs.provision.outputs.terraform_action == 'apply' &&
+      needs.provision.outputs.count != '0' &&
+      contains(fromJSON('["all","ai-workspace"]'), needs.provision.outputs.target_domains) &&
+      needs.provision.outputs.hosts_ai_workspace != '[]' &&
+      needs.provision.outputs.hosts_ai_workspace != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -632,7 +621,7 @@ jobs:
       # 与上传条件保持一致: artifact 只在基础设施阶段 apply 时产生。
       if: >-
         ${{ needs.provision.outputs.run_infrastructure == 'true' &&
-            needs.provision.outputs.terraform_action == 'apply' }}
+        needs.provision.outputs.terraform_action == 'apply' }}
       uses: actions/download-artifact@v8
       with:
         name: platform-ops-toolkit-cmdb
@@ -719,7 +708,7 @@ jobs:
       # 与上传条件保持一致: artifact 只在基础设施阶段 apply 时产生。
       if: >-
         ${{ needs.provision.outputs.run_infrastructure == 'true' &&
-            needs.provision.outputs.terraform_action == 'apply' }}
+        needs.provision.outputs.terraform_action == 'apply' }}
       uses: actions/download-artifact@v8
       with:
         name: platform-ops-toolkit-cmdb
