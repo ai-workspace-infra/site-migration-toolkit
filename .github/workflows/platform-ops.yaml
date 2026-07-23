@@ -93,6 +93,11 @@ on:
         - web-saas
         - infra-platform
         - agent-proxy
+      deploy_tag:
+        description: "部署版本 (SIT 必填, 用户定义; UAT 恒为 latest; PROD 取触发的 v* tag, dispatch 到 prod 时必须显式给 v* 或 release/*)"
+        required: false
+        default: ""
+        type: string
       cloud_provider:
         description: "云服务商 (目前仅 vultr-vps 已实现四个业务域的资源声明/凭据/Terraform 模块; 其余选项预留给未来多云支持, 选择后会在 provision 阶段直接失败, 不会被静默按 vultr 处理)"
         required: true
@@ -229,6 +234,7 @@ jobs:
       INPUT_SOURCE_DOMAIN_BASE:    ${{ github.event.inputs.source_domain_base }}
       INPUT_TARGET_DOMAIN_BASE:    ${{ github.event.inputs.target_domain_base }}
       INPUT_CONFIRM_DNS_SWITCH:    ${{ github.event.inputs.confirm_dns_switch }}
+      INPUT_DEPLOY_TAG:            ${{ github.event.inputs.deploy_tag }}
     outputs:
       deployment_env:           ${{ steps.route.outputs.deployment_env }}
       resource_file:            ${{ steps.route.outputs.resource_file }}
@@ -237,6 +243,7 @@ jobs:
       run_infrastructure:       ${{ steps.route.outputs.run_infrastructure }}
       run_application_deploy:        ${{ steps.route.outputs.run_application_deploy }}
       target_domains:           ${{ steps.route.outputs.target_domains }}
+      deploy_tag:               ${{ steps.route.outputs.deploy_tag }}
       terraform_action:         ${{ steps.route.outputs.terraform_action }}
       toolkit_action:           ${{ steps.route.outputs.toolkit_action }}
       infra_ref:                ${{ steps.route.outputs.infra_ref }}
@@ -546,6 +553,7 @@ jobs:
     with:
       target_host: ${{ matrix.host }}
       deploy_env: ${{ needs.provision.outputs.deployment_env }}
+      deploy_tag: ${{ needs.provision.outputs.deploy_tag }}
 
   deploy_infra_platform:
     name: Deploy Open Platform Services on ${{ matrix.host }}
@@ -568,6 +576,7 @@ jobs:
     with:
       target_host: ${{ matrix.host }}
       deploy_env: ${{ needs.provision.outputs.deployment_env }}
+      deploy_tag: ${{ needs.provision.outputs.deploy_tag }}
 
   deploy_agent_proxy:
     name: Deploy Agent Proxy Services on ${{ matrix.host }}
@@ -590,6 +599,7 @@ jobs:
     with:
       target_host: ${{ matrix.host }}
       deploy_env: ${{ needs.provision.outputs.deployment_env }}
+      deploy_tag: ${{ needs.provision.outputs.deploy_tag }}
 
   deploy_ai_workspace:
     name: Deploy AI Workspace Services on ${{ matrix.host }}
@@ -612,6 +622,7 @@ jobs:
     with:
       target_host: ${{ matrix.host }}
       deploy_env: ${{ needs.provision.outputs.deployment_env }}
+      deploy_tag: ${{ needs.provision.outputs.deploy_tag }}
 
   data_migration:
     name: Migrate Site Data (Source -> Target)

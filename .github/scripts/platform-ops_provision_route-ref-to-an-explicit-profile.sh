@@ -124,7 +124,52 @@ fi
 : "${run_infrastructure:?route: run_infrastructure was never assigned on this trigger path}"
 : "${run_application_deploy:?route: run_application_deploy was never assigned on this trigger path}"
 
-for key in deployment_env resource_file terraform_workspace state_key run_infrastructure run_application_deploy target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch; do
+# 部署版本。领域 CD 绝不在部署时自行决定版本 —— 没有显式 tag 就等于"部署此刻的
+# main", 那是一次无法复现、也无法回滚到确切内容的发布。约定见
+# docs/domains/DELIVERY-MANIFEST.md。
+case "${deployment_env}" in
+  prod)
+    # 触发它的 v* tag 本身就是版本。dispatch 到 prod 时没有 tag 可读, 必须显式给。
+    case "${GITHUB_REF:-}" in
+      refs/tags/v*) deploy_tag="${GITHUB_REF_NAME}" ;;
+      *)
+        deploy_tag="${INPUT_DEPLOY_TAG:-}"
+        case "${deploy_tag}" in
+          v*|release/*) ;;
+          *)
+            echo "::error::prod deploy_tag must be a v* tag or release/* ref, got '${deploy_tag}'. A prod release without an explicit version cannot be reproduced or rolled back." >&2
+            exit 1
+            ;;
+        esac
+        ;;
+    esac
+    ;;
+  uat)
+    deploy_tag=latest
+    ;;
+  sit)
+    # 用户定义。pull_request 上没有 dispatch input, 退回 PR head SHA ——
+    # 它同样是显式且可复现的, 而"部署此刻的 main"不是。
+    deploy_tag="${INPUT_DEPLOY_TAG:-}"
+    if [ -z "${deploy_tag}" ]; then
+      head_sha="${GITHUB_SHA:-}"
+      if [ "${GITHUB_EVENT_NAME:-}" = "pull_request" ] && [ -n "${head_sha}" ]; then
+        deploy_tag="${head_sha:0:12}"
+        echo "sit: no deploy_tag input on a pull_request; pinning to head sha ${deploy_tag}"
+      else
+        echo "::error::sit deploy_tag is empty. Pass an explicit deploy_tag on dispatch -- CD must not choose the version at deploy time." >&2
+        exit 1
+      fi
+    fi
+    ;;
+  *)
+    echo "::error::cannot derive deploy_tag for unknown deployment_env '${deployment_env}'" >&2
+    exit 1
+    ;;
+esac
+: "${deploy_tag:?route: deploy_tag was never assigned on this trigger path}"
+
+for key in deployment_env resource_file terraform_workspace state_key run_infrastructure run_application_deploy target_domains terraform_action toolkit_action infra_ref console_ref offline_mode source_host source_domain_base target_domain_base env_suffix confirm_dns_switch deploy_tag; do
   value="${!key:-}"
   echo "$key=$value" >> "$GITHUB_OUTPUT"
 done
