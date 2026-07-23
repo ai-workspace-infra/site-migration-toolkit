@@ -35,12 +35,13 @@ set -euo pipefail
 
 export VAULT_ADDR="${VAULT_ADDR:-https://vault.svc.plus}"
 
-if [ -z "${VAULT_TOKEN:-}" ]; then
-  echo "Error: VAULT_TOKEN is not set. Please export your Vault admin token."
+if [ -z "${VAULT_TOKEN:-}" ] && ! vault token lookup >/dev/null 2>&1; then
+  echo "Error: no authenticated Vault CLI session is available."
   exit 1
 fi
 
 REPO="ai-workspace-infra/platform-ops-toolkit"
+PLAYBOOKS_REPO="ai-workspace-infra/playbooks"
 
 # 允许换取这些 role 的 workflow 文件白名单。job_workflow_ref 的值形如
 # <org>/<repo>/.github/workflows/<file>@<ref>, 所以用 @* 收尾放行任意 ref,
@@ -53,6 +54,15 @@ read -r -d '' ALLOWED_WORKFLOWS <<EOF || true
     "${WF_PREFIX}/iac-pipeline-multi-cloud-account-matrix.yaml@*",
     "${WF_PREFIX}/iac-pipeline-multi-cloud-resources-matrix.yaml@*",
     "${WF_PREFIX}/iac-pipeline-multi-cloud-landingzone-baseline.yaml@*"
+EOF
+
+PLAYBOOKS_WF_PREFIX="${PLAYBOOKS_REPO}/.github/workflows"
+read -r -d '' PLAYBOOKS_ALLOWED_WORKFLOWS <<EOF || true
+    "${PLAYBOOKS_WF_PREFIX}/web-saas-domain-cd.yaml@*",
+    "${PLAYBOOKS_WF_PREFIX}/ai-workspace-domain-cd.yaml@*",
+    "${PLAYBOOKS_WF_PREFIX}/agent-proxy-domain-cd.yaml@*",
+    "${PLAYBOOKS_WF_PREFIX}/open-platform-domain-cd.yaml@*"
+    ,"${PLAYBOOKS_WF_PREFIX}/domain-cd.yaml@*"
 EOF
 
 # -----------------------------------------------------------------------------
@@ -220,6 +230,31 @@ ${ALLOWED_WORKFLOWS}
 EOF
 }
 
+# $1 = environment suffix, $2 = policy name, $3 = ref claim JSON value
+write_playbooks_role() {
+  local suffix="$1" policy="$2" ref_claim="$3"
+  vault write "auth/jwt/role/github-actions-playbooks-${suffix}" - <<EOF
+{
+  "role_type": "jwt",
+  "user_claim": "sub",
+  "bound_audiences": ["vault"],
+  "bound_claims_type": "glob",
+  "bound_claims": {
+    "repository": "${PLAYBOOKS_REPO}",
+    "job_workflow_ref": [
+${PLAYBOOKS_ALLOWED_WORKFLOWS}
+    ],
+    "ref": ${ref_claim}
+  },
+  "token_policies": ["${policy}"],
+  "token_no_default_policy": true,
+  "token_type": "batch",
+  "token_ttl": "${TOKEN_TTL}",
+  "token_max_ttl": "${TOKEN_TTL}"
+}
+EOF
+}
+
 # sit: PR 验证 + 非 main 分支的 workflow_dispatch。ref 仍然较宽(PR 与分支都要
 # 放行), 真正的收敛来自 job_workflow_ref 白名单 —— 换 token 只能通过本仓库
 # 已有的 6 个 workflow, 自己新加一个 workflow 是换不到的。
@@ -236,6 +271,18 @@ write_role uat github-actions-platform-ops-toolkit-uat \
 # 凭据边界; 流水线也只在 tag 时请求 prod。
 echo "Creating PROD role (v* tags only)..."
 write_role prod github-actions-platform-ops-toolkit-prod \
+  '"refs/tags/v*"'
+
+echo "Creating Playbooks SIT role (PR + branch dispatch)..."
+write_playbooks_role sit github-actions-platform-ops-toolkit-sit \
+  '["refs/pull/*/merge", "refs/heads/*"]'
+
+echo "Creating Playbooks UAT role (main + release/*)..."
+write_playbooks_role uat github-actions-platform-ops-toolkit-uat \
+  '["refs/heads/main", "refs/heads/release/*"]'
+
+echo "Creating Playbooks PROD role (v* tags only)..."
+write_playbooks_role prod github-actions-platform-ops-toolkit-prod \
   '"refs/tags/v*"'
 
 # 死角色清理: -prod-tags 从来没有被任何 workflow 请求过, 其职责已并入 -prod。
