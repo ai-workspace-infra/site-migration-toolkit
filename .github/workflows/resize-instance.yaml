@@ -114,6 +114,7 @@ env:
   VAULT_ADDR: https://vault.svc.plus
   VAULT_ENV_PATH: ${{ inputs.vault_env_path }}
   VAULT_ROLE: github-actions-platform-ops-toolkit-${{ inputs.vault_env_path }}
+  VAULT_KV: kv/data/CICD
   VAULT_KV_BASE: kv/data/CICD/${{ inputs.vault_env_path }}
 
 jobs:
@@ -204,7 +205,7 @@ jobs:
           role: ${{ env.VAULT_ROLE }}
           jwtGithubAudience: vault
           secrets: |
-            ${{ env.VAULT_KV_BASE }} CLOUDFLARE_API_TOKEN | CLOUDFLARE_API_TOKEN
+            ${{ env.VAULT_KV }} CLOUDFLARE_API_TOKEN | CLOUDFLARE_API_TOKEN
 
       - name: Switch DNS after health check
         if: inputs.switch_dns && steps.preflight.outputs.direction == 'downgrade'

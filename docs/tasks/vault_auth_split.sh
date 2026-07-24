@@ -270,10 +270,10 @@ echo "Creating SIT role (PR + branch dispatch)..."
 write_role sit github-actions-platform-ops-toolkit-sit \
   '["refs/pull/*/merge", "refs/heads/*"]'
 
-# uat: main 与 release/* 的 push 都路由到 uat, 两者都要放行。
-echo "Creating UAT role (main + release/*)..."
+# uat: main 与 release/* 的 push 都路由到 uat, 两者都要放行。允许 bugfix/* 用于 UAT 调试。
+echo "Creating UAT role (main + release/* + bugfix/*)..."
 write_role uat github-actions-platform-ops-toolkit-uat \
-  '["refs/heads/main", "refs/heads/release/*"]'
+  '["refs/heads/main", "refs/heads/release/*", "refs/heads/bugfix/*"]'
 
 # prod: 只认 v* tag。release/* 是任何 writer 都能建的分支, 不能作为 prod 的
 # 凭据边界; 流水线也只在 tag 时请求 prod。
@@ -285,9 +285,9 @@ echo "Creating Playbooks SIT role (PR + branch dispatch)..."
 write_playbooks_role sit github-actions-platform-ops-toolkit-sit \
   '["refs/pull/*/merge", "refs/heads/*"]'
 
-echo "Creating Playbooks UAT role (main + release/*)..."
+echo "Creating Playbooks UAT role (main + release/* + bugfix/*)..."
 write_playbooks_role uat github-actions-platform-ops-toolkit-uat \
-  '["refs/heads/main", "refs/heads/release/*"]'
+  '["refs/heads/main", "refs/heads/release/*", "refs/heads/bugfix/*"]'
 
 echo "Creating Playbooks PROD role (v* tags only)..."
 write_playbooks_role prod github-actions-platform-ops-toolkit-prod \
