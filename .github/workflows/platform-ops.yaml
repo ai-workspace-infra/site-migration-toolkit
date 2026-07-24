@@ -465,6 +465,7 @@ jobs:
       MATRIX_HOST:              ${{ matrix.host }}
       ANSIBLE_HOST_KEY_CHECKING: "False"
       ANSIBLE_SSH_ARGS:         "-o IdentityFile=~/.ssh/id_deploy -o StrictHostKeyChecking=no"
+      TARGET_DOMAIN_BASE:       ${{ needs.provision.outputs.target_domain_base }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7
@@ -495,7 +496,21 @@ jobs:
         ignoreNotFound: true
         secrets: |
           ${{ env.VAULT_KV_BASE }} SSH_PRIVATE_DEPLOY_KEY_B64 | ANSIBLE_SSH_KEY_B64 ;
-          ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN
+          ${{ env.VAULT_KV }} AI_WORKSPACE_AUTH_TOKEN | AI_WORKSPACE_AUTH_TOKEN ;
+          ${{ env.VAULT_KV_WEB_SAAS }} POSTGRES_PASSWORD | WEB_SAAS_POSTGRES_PASSWORD ;
+          ${{ env.VAULT_KV_WEB_SAAS }} ACCOUNT_PG_PASSWORD | WEB_SAAS_ACCOUNT_PG_PASSWORD ;
+          ${{ env.VAULT_KV_WEB_SAAS }} BILLING_DB_PASSWORD | WEB_SAAS_BILLING_DB_PASSWORD ;
+          ${{ env.VAULT_KV_WEB_SAAS }} AUTH_TOKEN_PUBLIC_TOKEN | WEB_SAAS_AUTH_TOKEN_PUBLIC_TOKEN ;
+          ${{ env.VAULT_KV_WEB_SAAS }} AUTH_TOKEN_REFRESH_SECRET | WEB_SAAS_AUTH_TOKEN_REFRESH_SECRET ;
+          ${{ env.VAULT_KV_WEB_SAAS }} AUTH_TOKEN_ACCESS_SECRET | WEB_SAAS_AUTH_TOKEN_ACCESS_SECRET ;
+          ${{ env.VAULT_KV_WEB_SAAS }} OAUTH_GITHUB_CLIENT_ID | WEB_SAAS_OAUTH_GITHUB_CLIENT_ID ;
+          ${{ env.VAULT_KV_WEB_SAAS }} OAUTH_GITHUB_CLIENT_SECRET | WEB_SAAS_OAUTH_GITHUB_CLIENT_SECRET ;
+          ${{ env.VAULT_KV_WEB_SAAS }} OAUTH_GOOGLE_CLIENT_ID | WEB_SAAS_OAUTH_GOOGLE_CLIENT_ID ;
+          ${{ env.VAULT_KV_WEB_SAAS }} OAUTH_GOOGLE_CLIENT_SECRET | WEB_SAAS_OAUTH_GOOGLE_CLIENT_SECRET ;
+          ${{ env.VAULT_KV_WEB_SAAS }} INTERNAL_SERVICE_TOKEN | WEB_SAAS_INTERNAL_SERVICE_TOKEN ;
+          ${{ env.VAULT_KV_WEB_SAAS }} STUNNEL_CA_CERT_B64 | WEB_SAAS_STUNNEL_CA_CERT_B64 ;
+          ${{ env.VAULT_KV_WEB_SAAS }} STUNNEL_SERVER_CERT_B64 | WEB_SAAS_STUNNEL_SERVER_CERT_B64 ;
+          ${{ env.VAULT_KV_WEB_SAAS }} STUNNEL_SERVER_KEY_B64 | WEB_SAAS_STUNNEL_SERVER_KEY_B64
 
     - name: Configure SSH Key
       env:
@@ -514,7 +529,29 @@ jobs:
       working-directory: playbooks
       env:
         VAULT_TOKEN: ${{ steps.vault.outputs.vault_token }}
-        # MATRIX_HOST / ANSIBLE_HOST_KEY_CHECKING / ANSIBLE_SSH_ARGS from job env
+        # MATRIX_HOST / ANSIBLE_HOST_KEY_CHECKING / ANSIBLE_SSH_ARGS / TARGET_DOMAIN_BASE from job env
+        #
+        # web_saas_host_config 角色读这些环境变量渲染主机侧配置(见
+        # playbooks roles/vhosts/web_saas_host_config/defaults/main.yml)。
+        # 只在 web_saas 组的主机上才会用到 —— 其他域的 bootstrap 脚本
+        # 会忽略它们。空值时角色自己的断言会给出指名道姓的错误, 而不是
+        # 静默渲染出一个能起来但连不上的服务。
+        WEB_SAAS_POSTGRES_PASSWORD:        ${{ steps.vault.outputs.WEB_SAAS_POSTGRES_PASSWORD }}
+        ACCOUNT_PG_PASSWORD:               ${{ steps.vault.outputs.WEB_SAAS_ACCOUNT_PG_PASSWORD }}
+        BILLING_DB_PASSWORD:               ${{ steps.vault.outputs.WEB_SAAS_BILLING_DB_PASSWORD }}
+        AUTH_TOKEN_PUBLIC_TOKEN:           ${{ steps.vault.outputs.WEB_SAAS_AUTH_TOKEN_PUBLIC_TOKEN }}
+        AUTH_TOKEN_REFRESH_SECRET:         ${{ steps.vault.outputs.WEB_SAAS_AUTH_TOKEN_REFRESH_SECRET }}
+        AUTH_TOKEN_ACCESS_SECRET:          ${{ steps.vault.outputs.WEB_SAAS_AUTH_TOKEN_ACCESS_SECRET }}
+        OAUTH_GITHUB_CLIENT_ID:            ${{ steps.vault.outputs.WEB_SAAS_OAUTH_GITHUB_CLIENT_ID }}
+        OAUTH_GITHUB_CLIENT_SECRET:        ${{ steps.vault.outputs.WEB_SAAS_OAUTH_GITHUB_CLIENT_SECRET }}
+        OAUTH_GOOGLE_CLIENT_ID:            ${{ steps.vault.outputs.WEB_SAAS_OAUTH_GOOGLE_CLIENT_ID }}
+        OAUTH_GOOGLE_CLIENT_SECRET:        ${{ steps.vault.outputs.WEB_SAAS_OAUTH_GOOGLE_CLIENT_SECRET }}
+        INTERNAL_SERVICE_TOKEN:            ${{ steps.vault.outputs.WEB_SAAS_INTERNAL_SERVICE_TOKEN }}
+        WEB_SAAS_STUNNEL_CA_CERT_B64:      ${{ steps.vault.outputs.WEB_SAAS_STUNNEL_CA_CERT_B64 }}
+        WEB_SAAS_STUNNEL_SERVER_CERT_B64:  ${{ steps.vault.outputs.WEB_SAAS_STUNNEL_SERVER_CERT_B64 }}
+        WEB_SAAS_STUNNEL_SERVER_KEY_B64:   ${{ steps.vault.outputs.WEB_SAAS_STUNNEL_SERVER_KEY_B64 }}
+        WEB_SAAS_CONSOLE_DOMAIN:           console-${{ env.DEPLOY_ENV }}.${{ needs.provision.outputs.target_domain_base }}
+        WEB_SAAS_ACCOUNTS_DOMAIN:          accounts-${{ env.DEPLOY_ENV }}.${{ needs.provision.outputs.target_domain_base }}
       run: ${{ github.workspace }}/.github/scripts/platform-ops_deploy_base_bootstrap-node.sh
 
 
